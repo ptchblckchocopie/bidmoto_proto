@@ -1,26 +1,5 @@
 import { writable, type Writable } from 'svelte/store';
 import { browser } from '$app/environment';
-import { PUBLIC_SSE_URL } from '$env/static/public';
-
-// Dynamically determine SSE URL based on current hostname
-function getSseUrl(): string {
-  // Use SvelteKit's static public env
-  if (PUBLIC_SSE_URL) {
-    return PUBLIC_SSE_URL;
-  }
-  // Fallback for development
-  if (browser && typeof window !== 'undefined') {
-    // In production, use same origin with /api/sse path
-    if (window.location.protocol === 'https:') {
-      return `${window.location.origin}/api/sse`;
-    }
-    return `http://${window.location.hostname}:3002`;
-  }
-  return 'http://localhost:3002';
-}
-
-
-const SSE_URL = getSseUrl();
 
 // Connection states
 export type SSEConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -46,7 +25,6 @@ export interface MessageEvent {
   senderId: number;
   preview?: string;
   timestamp: number;
-  // Full message data for instant display (no extra HTTP request needed)
   message?: {
     id: string;
     message: string;
@@ -92,21 +70,33 @@ export interface TypingEvent {
 
 export type SSEEvent = BidEvent | MessageEvent | RedisStatusEvent | ConnectedEvent | AcceptedEvent | TypingEvent;
 
-// Product SSE client
+// Smart polling interval based on auction end time
+function getPollingInterval(auctionEndDate?: string): number {
+  if (!auctionEndDate) return 5000;
+
+  const now = Date.now();
+  const endTime = new Date(auctionEndDate).getTime();
+  const timeLeft = endTime - now;
+
+  if (timeLeft <= 0) return 10000; // Auction ended, slow poll
+  if (timeLeft < 60_000) return 3000; // < 1 minute: fast poll
+  if (timeLeft < 3_600_000) return 5000; // < 1 hour: normal poll
+  return 10000; // > 1 hour: slow poll
+}
+
+// Product polling client (replaces SSE)
 class ProductSSEClient {
-  private eventSource: EventSource | null = null;
   private productId: string;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 10;
-  private reconnectDelay = 1000;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private listeners: Set<(event: SSEEvent) => void> = new Set();
-  private fallbackPolling = false;
-  private pollingInterval: ReturnType<typeof setInterval> | null = null;
+  private pollingTimer: ReturnType<typeof setTimeout> | null = null;
+  private active = false;
+  private lastBidAmount: number | null = null;
+  private lastStatus: string | null = null;
+  private auctionEndDate: string | undefined;
 
   public state: Writable<SSEConnectionState> = writable('disconnected');
   public lastBid: Writable<BidEvent | null> = writable(null);
-  public redisConnected: Writable<boolean> = writable(true);
+  public redisConnected: Writable<boolean> = writable(false);
 
   constructor(productId: string) {
     this.productId = productId;
@@ -114,107 +104,91 @@ class ProductSSEClient {
 
   connect(): void {
     if (!browser) return;
-    if (this.eventSource) return;
+    if (this.active) return;
 
-    this.state.set('connecting');
+    this.active = true;
+    this.state.set('connected');
 
+    // Start polling immediately
+    this.poll();
+    this.scheduleNextPoll();
+
+    // Pause polling when tab is hidden
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
+  }
+
+  private handleVisibilityChange = () => {
+    if (document.hidden) {
+      this.stopPolling();
+    } else if (this.active) {
+      this.poll();
+      this.scheduleNextPoll();
+    }
+  };
+
+  private scheduleNextPoll(): void {
+    this.stopPolling();
+    if (!this.active || document.hidden) return;
+
+    const interval = getPollingInterval(this.auctionEndDate);
+    this.pollingTimer = setTimeout(() => {
+      if (this.active && !document.hidden) {
+        this.poll();
+        this.scheduleNextPoll();
+      }
+    }, interval);
+  }
+
+  private stopPolling(): void {
+    if (this.pollingTimer) {
+      clearTimeout(this.pollingTimer);
+      this.pollingTimer = null;
+    }
+  }
+
+  private async poll(): Promise<void> {
     try {
-      this.eventSource = new EventSource(`${SSE_URL}/events/products/${this.productId}`);
+      const response = await fetch(`/api/bridge/products/${this.productId}/status`);
 
-      this.eventSource.onopen = () => {
-        this.state.set('connected');
-        this.reconnectAttempts = 0;
-        this.stopFallbackPolling();
-      };
+      if (response.ok) {
+        const data = await response.json();
 
-      this.eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data) as SSEEvent;
-
-          // Handle different event types
-          if (data.type === 'connected') {
-            if ((data as ConnectedEvent).fallbackPolling) {
-              this.startFallbackPolling();
-            }
-            if ((data as ConnectedEvent).redis === 'disconnected') {
-              this.redisConnected.set(false);
-            }
-          } else if (data.type === 'redis_status') {
-            this.redisConnected.set((data as RedisStatusEvent).connected);
-            if (!(data as RedisStatusEvent).connected) {
-              this.startFallbackPolling();
-            } else {
-              this.stopFallbackPolling();
-            }
-          } else if (data.type === 'bid') {
-            this.lastBid.set(data as BidEvent);
-          }
-
-          // Notify all listeners
-          this.listeners.forEach((listener) => listener(data));
-        } catch {
-          // Silently ignore parse errors
+        // Store auction end date for smart polling
+        if (data.auctionEndDate) {
+          this.auctionEndDate = data.auctionEndDate;
         }
-      };
 
-      this.eventSource.onerror = () => {
-        this.state.set('error');
-        this.handleReconnect();
-      };
-    } catch {
-      this.state.set('error');
-      this.startFallbackPolling();
-    }
-  }
-
-  private handleReconnect(): void {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      this.startFallbackPolling();
-      return;
-    }
-
-    this.eventSource?.close();
-    this.eventSource = null;
-
-    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts);
-    this.reconnectAttempts++;
-
-    this.reconnectTimer = setTimeout(() => {
-      this.connect();
-    }, delay);
-  }
-
-  private startFallbackPolling(): void {
-    if (this.fallbackPolling) return;
-    this.fallbackPolling = true;
-
-    this.pollingInterval = setInterval(async () => {
-      try {
-        // Use bridge endpoint instead of direct CMS access
-        const response = await fetch(`/api/bridge/products/${this.productId}/status`);
-
-        if (response.ok) {
-          const data = await response.json();
-          const event: SSEEvent = {
+        // Detect bid changes
+        if (data.currentBid !== this.lastBidAmount) {
+          const event: BidEvent = {
             type: 'bid',
             success: true,
             amount: data.currentBid,
             timestamp: Date.now(),
           };
+          this.lastBid.set(event);
           this.listeners.forEach((listener) => listener(event));
+          this.lastBidAmount = data.currentBid;
         }
-      } catch {
-        // Silently ignore polling errors
-      }
-    }, 5000); // Poll every 5 seconds
-  }
 
-  private stopFallbackPolling(): void {
-    if (this.pollingInterval) {
-      clearInterval(this.pollingInterval);
-      this.pollingInterval = null;
+        // Detect status changes (e.g., sold, ended)
+        if (data.status !== this.lastStatus && this.lastStatus !== null) {
+          if (data.status === 'sold') {
+            const event: AcceptedEvent = {
+              type: 'accepted',
+              success: true,
+              status: 'sold',
+              amount: data.currentBid,
+              timestamp: Date.now(),
+            };
+            this.listeners.forEach((listener) => listener(event));
+          }
+        }
+        this.lastStatus = data.status;
+      }
+    } catch {
+      // Silently ignore polling errors
     }
-    this.fallbackPolling = false;
   }
 
   subscribe(callback: (event: SSEEvent) => void): () => void {
@@ -223,31 +197,21 @@ class ProductSSEClient {
   }
 
   disconnect(): void {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
-    }
-
-    this.stopFallbackPolling();
+    this.active = false;
+    this.stopPolling();
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     this.state.set('disconnected');
     this.listeners.clear();
   }
 }
 
-// User SSE client for message notifications
+// User notification polling client (replaces SSE)
 class UserSSEClient {
-  private eventSource: EventSource | null = null;
   private userId: string;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 10;
-  private reconnectDelay = 1000;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private listeners: Set<(event: SSEEvent) => void> = new Set();
+  private pollingTimer: ReturnType<typeof setTimeout> | null = null;
+  private active = false;
+  private lastUnreadCount = -1;
 
   public state: Writable<SSEConnectionState> = writable('disconnected');
   public lastMessage: Writable<MessageEvent | null> = writable(null);
@@ -259,56 +223,78 @@ class UserSSEClient {
 
   connect(): void {
     if (!browser) return;
-    if (this.eventSource) return;
+    if (this.active) return;
 
-    this.state.set('connecting');
+    this.active = true;
+    this.state.set('connected');
 
-    try {
-      this.eventSource = new EventSource(`${SSE_URL}/events/users/${this.userId}`);
+    // Start polling
+    this.poll();
+    this.scheduleNextPoll();
 
-      this.eventSource.onopen = () => {
-        this.state.set('connected');
-        this.reconnectAttempts = 0;
-      };
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
+  }
 
-      this.eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data) as SSEEvent;
+  private handleVisibilityChange = () => {
+    if (document.hidden) {
+      this.stopPolling();
+    } else if (this.active) {
+      this.poll();
+      this.scheduleNextPoll();
+    }
+  };
 
-          if (data.type === 'new_message') {
-            this.lastMessage.set(data as MessageEvent);
-            this.unreadCount.update((n) => n + 1);
-          }
+  private scheduleNextPoll(): void {
+    this.stopPolling();
+    if (!this.active || document.hidden) return;
 
-          this.listeners.forEach((listener) => listener(data));
-        } catch {
-          // Silently ignore parse errors
-        }
-      };
+    this.pollingTimer = setTimeout(() => {
+      if (this.active && !document.hidden) {
+        this.poll();
+        this.scheduleNextPoll();
+      }
+    }, 15000); // Poll every 15 seconds for notifications
+  }
 
-      this.eventSource.onerror = () => {
-        this.state.set('error');
-        this.handleReconnect();
-      };
-    } catch {
-      this.state.set('error');
+  private stopPolling(): void {
+    if (this.pollingTimer) {
+      clearTimeout(this.pollingTimer);
+      this.pollingTimer = null;
     }
   }
 
-  private handleReconnect(): void {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      return;
+  private async poll(): Promise<void> {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      const response = await fetch('/api/bridge/notifications/poll', {
+        headers: {
+          ...(token ? { Authorization: `JWT ${token}` } : {}),
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+
+        if (data.unreadCount !== this.lastUnreadCount && this.lastUnreadCount !== -1) {
+          if (data.unreadCount > this.lastUnreadCount) {
+            const event: MessageEvent = {
+              type: 'new_message',
+              messageId: 0,
+              productId: 0,
+              senderId: 0,
+              timestamp: Date.now(),
+            };
+            this.lastMessage.set(event);
+            this.listeners.forEach((listener) => listener(event));
+          }
+        }
+
+        this.unreadCount.set(data.unreadCount);
+        this.lastUnreadCount = data.unreadCount;
+      }
+    } catch {
+      // Silently ignore polling errors
     }
-
-    this.eventSource?.close();
-    this.eventSource = null;
-
-    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts);
-    this.reconnectAttempts++;
-
-    this.reconnectTimer = setTimeout(() => {
-      this.connect();
-    }, delay);
   }
 
   subscribe(callback: (event: SSEEvent) => void): () => void {
@@ -318,25 +304,19 @@ class UserSSEClient {
 
   resetUnreadCount(): void {
     this.unreadCount.set(0);
+    this.lastUnreadCount = 0;
   }
 
   disconnect(): void {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
-    }
-
+    this.active = false;
+    this.stopPolling();
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     this.state.set('disconnected');
     this.listeners.clear();
   }
 }
 
-// Singleton managers for SSE connections
+// Singleton managers
 const productClients = new Map<string, ProductSSEClient>();
 const userClients = new Map<string, UserSSEClient>();
 
@@ -386,7 +366,6 @@ export async function queueBid(
   const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
 
   try {
-    // Use bridge endpoint instead of direct CMS access
     const response = await fetch('/api/bridge/bid/queue', {
       method: 'POST',
       headers: {
@@ -403,7 +382,7 @@ export async function queueBid(
     const data = await response.json();
 
     if (!response.ok) {
-      return { success: false, error: data.error || 'Failed to queue bid' };
+      return { success: false, error: data.error || 'Failed to place bid' };
     }
 
     return data;

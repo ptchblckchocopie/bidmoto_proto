@@ -1,7 +1,7 @@
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     container_name: marketplace-postgres
     restart: unless-stopped
     environment:
@@ -14,24 +14,6 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - marketplace-network
-
-  # Redis for bid queue and pub/sub
-  redis:
-    image: redis:7-alpine
-    container_name: marketplace-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes --appendfsync everysec
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -53,7 +35,6 @@ services:
       PORT: 3001
       SERVER_URL: http://localhost:3001
       NODE_ENV: development
-      REDIS_URL: redis://redis:6379
       AWS_ACCESS_KEY_ID: DO00FATHCD4N7XWJWLHC
       AWS_SECRET_ACCESS_KEY: gVfCrrjqn0RWE0/GkrMYOWU9wHdXMoCL8kNx1gp6UK8
       S3_REGION: sgp1
@@ -65,8 +46,6 @@ services:
       - /app/node_modules
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     networks:
       - marketplace-network
@@ -83,51 +62,12 @@ services:
     environment:
       PUBLIC_API_URL: http://localhost:3001
       VITE_API_URL: http://localhost:3001
-      PUBLIC_SSE_URL: http://localhost:3002
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/static:/app/static
       - /app/node_modules
     depends_on:
       - backend
-      - sse-service
-    networks:
-      - marketplace-network
-
-  # SSE Service for real-time updates
-  sse-service:
-    build:
-      context: ./services/sse-service
-      dockerfile: Dockerfile
-    container_name: marketplace-sse
-    restart: unless-stopped
-    ports:
-      - "3002:3002"
-    environment:
-      SSE_PORT: 3002
-      REDIS_URL: redis://redis:6379
-      SSE_CORS_ORIGIN: http://localhost:5173
-    depends_on:
-      redis:
-        condition: service_healthy
-    networks:
-      - marketplace-network
-
-  # Bid Worker for processing bid queue
-  bid-worker:
-    build:
-      context: ./services/bid-worker
-      dockerfile: Dockerfile
-    container_name: marketplace-bid-worker
-    restart: unless-stopped
-    environment:
-      REDIS_URL: redis://redis:6379
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/marketplace
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     networks:
       - marketplace-network
 
@@ -137,4 +77,3 @@ networks:
 
 volumes:
   postgres_data:
-  redis_data:

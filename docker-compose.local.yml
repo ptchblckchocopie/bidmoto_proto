@@ -5,7 +5,7 @@
 services:
   # PostgreSQL Database (isolated)
   marketplace-postgres:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     container_name: marketplace-local-postgres
     restart: unless-stopped
     environment:
@@ -24,25 +24,6 @@ services:
     networks:
       - marketplace-local-network
 
-  # Redis for bid queue and pub/sub (isolated)
-  # Using port 6380 to avoid conflict with other Redis instances
-  marketplace-redis:
-    image: redis:7-alpine
-    container_name: marketplace-local-redis
-    restart: unless-stopped
-    ports:
-      - "6380:6379"
-    volumes:
-      - marketplace_local_redis_data:/data
-    command: redis-server --appendonly yes --appendfsync everysec
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - marketplace-local-network
-
 # Isolated network for this project only
 networks:
   marketplace-local-network:
@@ -53,5 +34,3 @@ networks:
 volumes:
   marketplace_local_postgres_data:
     name: marketplace_local_postgres_data
-  marketplace_local_redis_data:
-    name: marketplace_local_redis_data

@@ -27,6 +27,7 @@ cms/src/generated-schema.graphql
 
 # Frontend
 frontend/.svelte-kit/
+frontend/.vercel/
 frontend/build/
 
 # OS
