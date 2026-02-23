@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { createProduct, updateProduct, uploadMedia, deleteMedia } from '$lib/api';
   import { authStore } from '$lib/stores/auth';
   import KeywordInput from './KeywordInput.svelte';
@@ -7,54 +7,65 @@
   import { regions, getCitiesByRegion } from '$lib/data/philippineLocations';
 
   // Props
-  export let mode: 'create' | 'edit' = 'create';
-  export let product: Product | null = null;
-  export let onSuccess: ((product: Product) => void) | null = null;
-  export let onCancel: (() => void) | null = null;
+  let {
+    mode = 'create',
+    product = null,
+    onSuccess = null,
+    onCancel = null
+  }: {
+    mode?: 'create' | 'edit';
+    product?: Product | null;
+    onSuccess?: ((product: Product) => void) | null;
+    onCancel?: (() => void) | null;
+  } = $props();
 
   // Form fields
-  let title = product?.title || '';
-  let description = product?.description || '';
-  let keywords: string[] = product?.keywords?.map(k => k.keyword) || [];
-  let startingPrice = product?.startingPrice || 0;
-  let bidInterval = 0;
-  let auctionEndDate = '';
-  let active = product?.active ?? true;
-  let region = product?.region || '';
-  let city = product?.city || '';
-  let deliveryOptions: 'delivery' | 'meetup' | 'both' | '' = product?.delivery_options || '';
+  let title = $state(product?.title || '');
+  let description = $state(product?.description || '');
+  let keywords: string[] = $state(product?.keywords?.map(k => k.keyword) || []);
+  let startingPrice = $state(product?.startingPrice || 0);
+  let bidInterval = $state(0);
+  let auctionEndDate = $state('');
+  let active = $state(product?.active ?? true);
+  let region = $state(product?.region || '');
+  let city = $state(product?.city || '');
+  let deliveryOptions: 'delivery' | 'meetup' | 'both' | '' = $state(product?.delivery_options || '');
 
   // Image handling
-  let existingImages: Array<{ id: string; image: { id: string; url: string; alt?: string } }> = [];
-  let imageFiles: File[] = [];
-  let imagesToDelete: string[] = [];
+  let existingImages: Array<{ id: string; image: { id: string; url: string; alt?: string } }> = $state([]);
+  let imageFiles: File[] = $state([]);
+  let imagesToDelete: string[] = $state([]);
 
   // State
-  let submitting = false;
-  let error = '';
-  let success = false;
-  let hasBids = false;
-  let loadingMessage = '';
-  let showToast = false;
-  let toastMessage = '';
-  let toastType: 'success' | 'error' = 'success';
+  let submitting = $state(false);
+  let error = $state('');
+  let success = $state(false);
+  let hasBids = $state(false);
+  let loadingMessage = $state('');
+  let showToast = $state(false);
+  let toastMessage = $state('');
+  let toastType: 'success' | 'error' = $state('success');
 
   // Duration controls
-  let customDays = 0;
-  let customHours = 0;
-  let isUpdatingFromDuration = false;
-  let isUpdatingFromDate = false;
+  let customDays = $state(0);
+  let customHours = $state(0);
+  let isUpdatingFromDuration = $state(false);
+  let isUpdatingFromDate = $state(false);
 
   // User currency
-  $: userCurrency = $authStore.user?.currency || 'PHP';
+  let userCurrency = $derived($authStore.user?.currency || 'PHP');
 
   // Get cities for selected region
-  $: availableCities = region ? getCitiesByRegion(region) : [];
+  let availableCities = $derived(region ? getCitiesByRegion(region) : []);
 
   // Reset city when region changes
-  $: if (region && !availableCities.includes(city)) {
-    city = '';
-  }
+  $effect(() => {
+    const currentRegion = region;
+    const cities = availableCities;
+    if (currentRegion && !cities.includes(city)) {
+      city = '';
+    }
+  });
 
   // Initialize form on mount
   onMount(() => {
@@ -82,7 +93,7 @@
       hasBids = !!(product.currentBid && product.currentBid > 0);
 
       // Load existing images
-      existingImages = product.images?.map((img, index) => ({
+      existingImages = product.images?.map((img: any, index: number) => ({
         id: `existing-${index}`,
         image: typeof img.image === 'object' ? img.image : { id: img.image, url: '', alt: '' }
       })) || [];
@@ -158,12 +169,12 @@
   }
 
   // Make minEndDate reactive to mode and product changes
-  $: minEndDate = getMinimumEndDate();
+  let minEndDate = $derived(getMinimumEndDate());
 
   // Store previous values to detect actual changes
-  let prevAuctionEndDate = '';
-  let prevCustomDays = 0;
-  let prevCustomHours = 0;
+  let prevAuctionEndDate = $state('');
+  let prevCustomDays = $state(0);
+  let prevCustomHours = $state(0);
 
   // Function to update auction date from custom duration
   function updateDateFromDuration() {
@@ -221,17 +232,31 @@
   }
 
   // Apply custom duration automatically when values change
-  $: if ((customDays !== prevCustomDays || customHours !== prevCustomHours) && !isUpdatingFromDate) {
-    prevCustomDays = customDays;
-    prevCustomHours = customHours;
-    updateDateFromDuration();
-  }
+  $effect(() => {
+    const days = customDays;
+    const hours = customHours;
+    const prevDays = untrack(() => prevCustomDays);
+    const prevHours = untrack(() => prevCustomHours);
+    const updatingFromDate = untrack(() => isUpdatingFromDate);
+
+    if ((days !== prevDays || hours !== prevHours) && !updatingFromDate) {
+      prevCustomDays = days;
+      prevCustomHours = hours;
+      untrack(() => updateDateFromDuration());
+    }
+  });
 
   // Update custom duration when auction date changes
-  $: if (auctionEndDate && auctionEndDate !== prevAuctionEndDate && !isUpdatingFromDuration) {
-    prevAuctionEndDate = auctionEndDate;
-    updateDurationFromDate();
-  }
+  $effect(() => {
+    const date = auctionEndDate;
+    const prevDate = untrack(() => prevAuctionEndDate);
+    const updatingFromDuration = untrack(() => isUpdatingFromDuration);
+
+    if (date && date !== prevDate && !updatingFromDuration) {
+      prevAuctionEndDate = date;
+      untrack(() => updateDurationFromDate());
+    }
+  });
 
   // Image handling for create mode
   function handleImageSelect(event: Event) {
@@ -287,8 +312,8 @@
   }
 
   // Drag and drop for reordering images
-  let draggedIndex: number | null = null;
-  let draggingExisting = false;
+  let draggedIndex: number | null = $state(null);
+  let draggingExisting = $state(false);
 
   function handleDragStart(event: DragEvent, index: number, isExisting: boolean = false) {
     draggedIndex = index;
@@ -534,7 +559,7 @@
   }
 </script>
 
-<form on:submit={handleSubmit} class="product-form">
+<form onsubmit={handleSubmit} class="product-form">
   <div class="form-group">
     <label for="title">Product Title *</label>
     <input
@@ -624,7 +649,7 @@
             type="file"
             accept="image/*"
             multiple
-            on:change={handleImageSelect}
+            onchange={handleImageSelect}
             disabled={submitting}
             style="display: none;"
           />
@@ -640,10 +665,10 @@
               class="image-preview-item"
               class:dragging={draggedIndex === index && draggingExisting}
               draggable="true"
-              on:dragstart={(e) => handleDragStart(e, index, true)}
-              on:dragover={handleDragOver}
-              on:drop={(e) => handleDrop(e, index, true)}
-              on:dragend={handleDragEnd}
+              ondragstart={(e) => handleDragStart(e, index, true)}
+              ondragover={handleDragOver}
+              ondrop={(e) => handleDrop(e, index, true)}
+              ondragend={handleDragEnd}
               role="button"
               tabindex="0"
             >
@@ -651,7 +676,7 @@
               <button
                 type="button"
                 class="remove-image-btn"
-                on:click={() => removeExistingImage(img.image.id)}
+                onclick={() => removeExistingImage(img.image.id)}
                 disabled={submitting}
                 title="Remove image"
               >
@@ -667,10 +692,10 @@
               class="image-preview-item"
               class:dragging={draggedIndex === index && !draggingExisting}
               draggable="true"
-              on:dragstart={(e) => handleDragStart(e, index, false)}
-              on:dragover={handleDragOver}
-              on:drop={(e) => handleDrop(e, index, false)}
-              on:dragend={handleDragEnd}
+              ondragstart={(e) => handleDragStart(e, index, false)}
+              ondragover={handleDragOver}
+              ondrop={(e) => handleDrop(e, index, false)}
+              ondragend={handleDragEnd}
               role="button"
               tabindex="0"
             >
@@ -678,7 +703,7 @@
               <button
                 type="button"
                 class="remove-image-btn"
-                on:click={() => removeImage(index)}
+                onclick={() => removeImage(index)}
                 disabled={submitting}
                 title="Remove image"
               >
@@ -807,7 +832,7 @@
       {submitting ? (mode === 'edit' ? 'Updating...' : 'Creating Listing...') : (mode === 'edit' ? 'Update Product' : 'Create Listing')}
     </button>
     {#if onCancel}
-      <button type="button" class="btn-secondary" on:click={onCancel} disabled={submitting}>
+      <button type="button" class="btn-secondary" onclick={onCancel} disabled={submitting}>
         Cancel
       </button>
     {/if}
@@ -845,18 +870,17 @@
   }
 
   .success-message {
-    background-color: #10b981;
+    background-color: #000;
     color: white;
     padding: 1rem;
-    border-radius: 4px;
     margin-bottom: 1.5rem;
   }
 
   .error-message {
-    background-color: #ef4444;
-    color: white;
+    background-color: #fff;
+    color: #000;
     padding: 1rem;
-    border-radius: 4px;
+    border: 4px solid #000;
     margin-bottom: 1.5rem;
   }
 
@@ -865,9 +889,8 @@
   }
 
   .form-info {
-    background-color: #f0f9ff;
-    border: 1px solid #bae6fd;
-    border-radius: 6px;
+    background-color: #F5F5F5;
+    border: 1px solid #000;
     padding: 1rem;
     margin-bottom: 1.5rem;
   }
@@ -878,7 +901,7 @@
 
   .form-info .note {
     font-size: 0.875rem;
-    color: #0369a1;
+    color: #525252;
     font-style: italic;
     margin-top: 0.75rem;
   }
@@ -909,7 +932,6 @@
     padding: 0.75rem;
     font-size: 1rem;
     border: 1px solid #ccc;
-    border-radius: 4px;
     font-family: inherit;
   }
 
@@ -917,8 +939,10 @@
   textarea:focus,
   select:focus {
     outline: none;
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+    border-color: #000;
+    border-width: 4px;
+    box-shadow: none;
+    padding: calc(0.75rem - 3px);
   }
 
   input:disabled,
@@ -938,39 +962,41 @@
   .btn-secondary {
     padding: 0.75rem 2rem;
     font-size: 1.1rem;
-    border-radius: 4px;
     cursor: pointer;
     text-decoration: none;
     display: inline-block;
     text-align: center;
-    border: none;
     font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .btn-primary {
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
+    background-color: #000;
+    color: #fff;
+    border: 2px solid #000;
   }
 
   .btn-primary:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+    background-color: #fff;
+    color: #000;
   }
 
   .btn-primary:disabled {
     background-color: #ccc;
     cursor: not-allowed;
-    transform: none;
   }
 
   .btn-secondary {
-    background-color: #f0f0f0;
-    color: #333;
-    border: 1px solid #ccc;
+    background-color: transparent;
+    color: #000;
+    border: 2px solid #000;
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background-color: #e0e0e0;
+    background-color: #000;
+    color: #fff;
   }
 
   .field-hint {
@@ -1025,15 +1051,14 @@
     width: 80px;
     padding: 0.625rem;
     font-size: 1rem;
-    border: 2px solid #e5e7eb;
-    border-radius: 6px;
+    border: 2px solid #000;
     font-family: inherit;
   }
 
   .duration-input:focus {
     outline: none;
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+    border-color: #000;
+    box-shadow: none;
   }
 
   .duration-unit {
@@ -1054,19 +1079,18 @@
     align-items: center;
     gap: 0.5rem;
     padding: 1rem 2rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border-radius: 8px;
+    background: #000;
+    color: #fff;
     font-weight: 600;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
-    border: none;
+    transition: background 0.2s, color 0.2s;
+    border: 2px solid #000;
     font-size: 1rem;
   }
 
   .image-upload-btn:hover:not(.disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .image-upload-btn.disabled {
@@ -1087,17 +1111,15 @@
   .image-preview-item {
     position: relative;
     aspect-ratio: 1;
-    border-radius: 8px;
     overflow: hidden;
-    border: 2px solid #e5e7eb;
+    border: 2px solid #000;
     background: #f9fafb;
     cursor: grab;
     transition: all 0.3s ease;
   }
 
   .image-preview-item:hover {
-    border-color: #dc2626;
-    box-shadow: 0 4px 8px rgba(220, 38, 38, 0.2);
+    border-color: #000;
   }
 
   .image-preview-item.dragging {
@@ -1121,7 +1143,6 @@
     background: rgba(0, 0, 0, 0.7);
     color: white;
     padding: 0.25rem 0.75rem;
-    border-radius: 12px;
     font-size: 1.25rem;
     font-weight: bold;
     letter-spacing: -2px;
@@ -1137,7 +1158,7 @@
   .drag-hint {
     margin-top: 0.75rem;
     font-size: 0.9rem;
-    color: #059669;
+    color: #525252;
     font-weight: 500;
   }
 
@@ -1147,10 +1168,9 @@
     right: 0.5rem;
     width: 32px;
     height: 32px;
-    background: rgba(220, 38, 38, 0.9);
-    color: white;
+    background: #000;
+    color: #fff;
     border: none;
-    border-radius: 50%;
     font-size: 1.25rem;
     cursor: pointer;
     display: flex;
@@ -1162,8 +1182,9 @@
   }
 
   .remove-image-btn:hover:not(:disabled) {
-    background: #991b1b;
-    transform: scale(1.1);
+    background: #fff;
+    color: #000;
+    border: 1px solid #000;
   }
 
   .remove-image-btn:disabled {
@@ -1178,7 +1199,6 @@
     background: rgba(0, 0, 0, 0.7);
     color: white;
     padding: 0.25rem 0.5rem;
-    border-radius: 4px;
     font-size: 0.75rem;
     font-weight: 600;
   }
@@ -1187,10 +1207,9 @@
     position: absolute;
     top: 0.5rem;
     left: 0.5rem;
-    background: #059669;
+    background: #000;
     color: white;
     padding: 0.25rem 0.5rem;
-    border-radius: 4px;
     font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.5px;
@@ -1247,7 +1266,7 @@
     width: 64px;
     height: 64px;
     border: 6px solid rgba(255, 255, 255, 0.2);
-    border-top-color: #dc2626;
+    border-top-color: #fff;
     border-radius: 50%;
     animation: spin 1s linear infinite;
     margin: 0 auto 1.5rem;
@@ -1281,8 +1300,6 @@
     align-items: center;
     gap: 12px;
     padding: 16px 24px;
-    border-radius: 12px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
     z-index: 10000;
     min-width: 300px;
     max-width: 500px;
@@ -1311,19 +1328,19 @@
   }
 
   .toast.success {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
+    background: #000;
+    color: #fff;
   }
 
   .toast.error {
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-    color: white;
+    background: #fff;
+    color: #000;
+    border: 4px solid #000;
   }
 
   .toast-icon {
     width: 28px;
     height: 28px;
-    border-radius: 50%;
     background: rgba(255, 255, 255, 0.2);
     display: flex;
     align-items: center;

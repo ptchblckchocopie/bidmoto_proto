@@ -1,23 +1,29 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
 
-  export let images: Array<{ image: { url: string; alt?: string } }> = [];
-  export let productTitle: string = '';
-  export let autoplayInterval: number = 3000; // ms between slides
+  let {
+    images = [],
+    productTitle = '',
+    autoplayInterval = 3000
+  }: {
+    images?: Array<{ image: { url: string; alt?: string } }>;
+    productTitle?: string;
+    autoplayInterval?: number;
+  } = $props();
 
-  let currentIndex = 0;
-  let autoplayTimer: number | null = null;
-  let isAutoplayActive = true;
-  let hasUserInteracted = false;
+  let currentIndex = $state(0);
+  let autoplayTimer: number | null = $state(null);
+  let isAutoplayActive = $state(true);
+  let hasUserInteracted = $state(false);
 
   // Lightbox state
-  let lightboxOpen = false;
-  let lightboxIndex = 0;
+  let lightboxOpen = $state(false);
+  let lightboxIndex = $state(0);
 
   // Touch/swipe state
-  let touchStartX = 0;
-  let touchEndX = 0;
-  let isSwiping = false;
+  let touchStartX = $state(0);
+  let touchEndX = $state(0);
+  let isSwiping = $state(false);
   const minSwipeDistance = 50; // Minimum distance in pixels to trigger a swipe
 
   function nextSlide() {
@@ -156,21 +162,23 @@
   });
 
   // Restart autoplay when images change
-  $: if (images.length > 1 && !hasUserInteracted) {
-    startAutoplay();
-  }
+  $effect(() => {
+    if (images.length > 1 && !hasUserInteracted) {
+      startAutoplay();
+    }
+  });
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 {#if images && images.length > 0}
   <div class="image-slider">
     <!-- Main image display -->
     <div
       class="slider-main"
-      on:touchstart={handleTouchStart}
-      on:touchmove={handleTouchMove}
-      on:touchend={handleTouchEnd}
+      ontouchstart={handleTouchStart}
+      ontouchmove={handleTouchMove}
+      ontouchend={handleTouchEnd}
     >
       <div class="slider-images">
         {#each images as imageItem, index}
@@ -179,7 +187,7 @@
               src={imageItem.image.url}
               alt={imageItem.image.alt || productTitle}
               loading={index === 0 ? 'eager' : 'lazy'}
-              on:click={() => openLightbox(index)}
+              onclick={() => openLightbox(index)}
               class="clickable-image"
               role="button"
               tabindex="0"
@@ -192,17 +200,17 @@
       {#if images.length > 1}
         <button
           class="nav-arrow nav-prev"
-          on:click={handlePrevClick}
+          onclick={handlePrevClick}
           aria-label="Previous image"
         >
-          ‹
+          &#8249;
         </button>
         <button
           class="nav-arrow nav-next"
-          on:click={handleNextClick}
+          onclick={handleNextClick}
           aria-label="Next image"
         >
-          ›
+          &#8250;
         </button>
 
         <!-- Slide counter -->
@@ -219,7 +227,7 @@
           <button
             class="thumbnail"
             class:active={index === currentIndex}
-            on:click={() => goToSlide(index)}
+            onclick={() => goToSlide(index)}
             aria-label={`Go to image ${index + 1}`}
           >
             <img
@@ -240,12 +248,12 @@
 
 <!-- Lightbox Modal -->
 {#if lightboxOpen}
-  <div class="lightbox-overlay" on:click={closeLightbox} role="button" tabindex="0">
-    <button class="lightbox-close" on:click={closeLightbox} aria-label="Close lightbox">
-      ✕
+  <div class="lightbox-overlay" onclick={closeLightbox} role="button" tabindex="0">
+    <button class="lightbox-close" onclick={closeLightbox} aria-label="Close lightbox">
+      &#10005;
     </button>
 
-    <div class="lightbox-content" on:click|stopPropagation role="dialog">
+    <div class="lightbox-content" onclick={(e) => { e.stopPropagation(); }} role="dialog">
       <img
         src={images[lightboxIndex].image.url}
         alt={images[lightboxIndex].image.alt || productTitle}
@@ -255,17 +263,17 @@
       {#if images.length > 1}
         <button
           class="lightbox-arrow lightbox-prev"
-          on:click={lightboxPrev}
+          onclick={lightboxPrev}
           aria-label="Previous image"
         >
-          ‹
+          &#8249;
         </button>
         <button
           class="lightbox-arrow lightbox-next"
-          on:click={lightboxNext}
+          onclick={lightboxNext}
           aria-label="Next image"
         >
-          ›
+          &#8250;
         </button>
 
         <div class="lightbox-counter">
@@ -287,9 +295,8 @@
     width: 100%;
     aspect-ratio: 4 / 3;
     background-color: #f5f5f5;
-    border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border: 1px solid #000;
     touch-action: pan-y pinch-zoom;
     user-select: none;
     -webkit-user-select: none;
@@ -354,7 +361,8 @@
   }
 
   .nav-arrow:hover {
-    background: rgba(220, 38, 38, 0.9);
+    background: #fff;
+    color: #000;
   }
 
   .nav-arrow:active {
@@ -363,12 +371,10 @@
 
   .nav-prev {
     left: 0;
-    border-radius: 0 8px 8px 0;
   }
 
   .nav-next {
     right: 0;
-    border-radius: 8px 0 0 8px;
   }
 
   .slide-counter {
@@ -378,7 +384,8 @@
     background: rgba(0, 0, 0, 0.7);
     color: white;
     padding: 0.5rem 1rem;
-    border-radius: 20px;
+    border: 1px solid #000;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 0.9rem;
     font-weight: 600;
     z-index: 10;
@@ -391,7 +398,7 @@
     overflow-x: auto;
     padding: 0.5rem 0;
     scrollbar-width: thin;
-    scrollbar-color: #dc2626 #f5f5f5;
+    scrollbar-color: #000 #f5f5f5;
   }
 
   .thumbnail-nav::-webkit-scrollbar {
@@ -404,12 +411,12 @@
   }
 
   .thumbnail-nav::-webkit-scrollbar-thumb {
-    background: #dc2626;
+    background: #000;
     border-radius: 4px;
   }
 
   .thumbnail-nav::-webkit-scrollbar-thumb:hover {
-    background: #991b1b;
+    background: #333;
   }
 
   .thumbnail {
@@ -417,7 +424,6 @@
     width: 80px;
     height: 80px;
     border: 3px solid transparent;
-    border-radius: 8px;
     overflow: hidden;
     cursor: pointer;
     transition: all 0.3s ease;
@@ -426,14 +432,12 @@
   }
 
   .thumbnail:hover {
-    border-color: #dc2626;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(220, 38, 38, 0.3);
+    border-color: #000;
   }
 
   .thumbnail.active {
-    border-color: #dc2626;
-    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    border-color: #000;
+    box-shadow: none;
   }
 
   .thumbnail img {
@@ -450,7 +454,7 @@
     width: 100%;
     aspect-ratio: 4 / 3;
     background-color: #f5f5f5;
-    border-radius: 12px;
+    border: 1px solid #000;
     color: #999;
     font-size: 1.2rem;
     font-weight: 600;
@@ -521,7 +525,6 @@
     font-size: 2.5rem;
     width: 60px;
     height: 60px;
-    border-radius: 50%;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -533,8 +536,9 @@
   }
 
   .lightbox-close:hover {
-    background: rgba(220, 38, 38, 0.9);
-    border-color: rgba(220, 38, 38, 1);
+    background: #fff;
+    color: #000;
+    border-color: #fff;
     transform: rotate(90deg);
   }
 
@@ -554,8 +558,6 @@
     width: auto;
     height: auto;
     object-fit: contain;
-    border-radius: 8px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   }
 
   .lightbox-arrow {
@@ -568,7 +570,6 @@
     font-size: 4rem;
     width: 70px;
     height: 70px;
-    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -580,8 +581,9 @@
   }
 
   .lightbox-arrow:hover {
-    background: rgba(220, 38, 38, 0.9);
-    border-color: rgba(220, 38, 38, 1);
+    background: #fff;
+    color: #000;
+    border-color: #fff;
     transform: translateY(-50%) scale(1.1);
   }
 
@@ -601,7 +603,6 @@
     background: rgba(0, 0, 0, 0.7);
     color: white;
     padding: 0.75rem 1.5rem;
-    border-radius: 30px;
     font-size: 1.1rem;
     font-weight: 600;
     border: 2px solid rgba(255, 255, 255, 0.2);

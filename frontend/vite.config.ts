@@ -1,11 +1,11 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  plugins: [sveltekit()],
+  plugins: [tailwindcss(), sveltekit()],
   server: {
-    host: true, // Enable network access
+    host: true,
     port: 5173,
-    // Proxy removed - all API calls now go through SvelteKit bridge endpoints
   },
 });

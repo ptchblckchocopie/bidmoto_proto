@@ -540,14 +540,10 @@ export async function createProduct(productData: {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Failed to create product:', response.status, errorText);
-      throw new Error('Failed to create product');
+      throw new Error(`Failed to create product: ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('Create product response:', data);
-    // PayloadCMS returns { message: "...", doc: { ... } }
-    // Return only the doc (the actual product object)
     return data.doc || data;
   } catch (error) {
     console.error('Error creating product:', error);
@@ -573,8 +569,6 @@ export async function updateProduct(
   }
 ): Promise<Product | null> {
   try {
-    console.log('Updating product:', productId, productData);
-
     // Create abort controller for timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
@@ -588,16 +582,13 @@ export async function updateProduct(
     });
 
     clearTimeout(timeoutId);
-    console.log('Update response status:', response.status);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Update failed with status:', response.status, errorText);
       throw new Error(`Failed to update product: ${response.status} - ${errorText}`);
     }
 
     const result = await response.json();
-    console.log('Update successful:', result);
     // PayloadCMS returns { message: "...", doc: { ... } }
     // Return only the doc (the actual product object)
     return result.doc || result;
@@ -674,8 +665,6 @@ export async function getCurrentUser(customFetch?: typeof fetch): Promise<User |
 // Place a bid
 export async function placeBid(productId: string, amount: number, censorName: boolean = false): Promise<Bid | null> {
   try {
-    console.log('Placing bid:', { productId, amount, censorName, headers: getAuthHeaders() });
-
     const response = await fetch(`${BRIDGE_URL}/api/bridge/bids`, {
       method: 'POST',
       headers: getAuthHeaders(),
@@ -688,16 +677,12 @@ export async function placeBid(productId: string, amount: number, censorName: bo
       }),
     });
 
-    console.log('Bid response status:', response.status);
-
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
-      console.error('Bid failed:', response.status, errorData);
       throw new Error(errorData?.message || 'Failed to place bid');
     }
 
     const data = await response.json();
-    console.log('Bid placed successfully:', data);
     // PayloadCMS returns { message: "...", doc: { ... } }
     // Return only the doc (the actual bid object)
     return data.doc || data;
@@ -1039,7 +1024,6 @@ export async function deleteMedia(mediaId: string): Promise<boolean> {
     });
 
     if (!response.ok) {
-      console.error('Failed to delete media:', response.status);
       return false;
     }
 
@@ -1057,12 +1041,9 @@ export async function uploadMedia(file: File): Promise<string | null> {
     formData.append('file', file);
 
     const token = getAuthToken();
-    console.log('Upload token present:', !!token);
     const headers: HeadersInit = {};
     if (token) {
       headers['Authorization'] = `JWT ${token}`;
-    } else {
-      console.error('No auth token found - user may not be logged in');
     }
 
     const response = await fetch(`${BRIDGE_URL}/api/bridge/media`, {
@@ -1073,9 +1054,6 @@ export async function uploadMedia(file: File): Promise<string | null> {
     });
 
     if (!response.ok) {
-      console.error('Failed to upload media:', response.status);
-      const errorText = await response.text();
-      console.error('Error details:', errorText);
       return null;
     }
 

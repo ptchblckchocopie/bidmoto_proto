@@ -2,20 +2,20 @@
   import { placeBid, fetchProductBids, updateProduct, checkProductStatus, fetchProduct, fetchUserRatings, calculateUserRatingStats, fetchUserProducts, type UserRatingStats } from '$lib/api';
   import { authStore } from '$lib/stores/auth';
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import type { PageData } from './$types';
   import ProductForm from '$lib/components/ProductForm.svelte';
   import ImageSlider from '$lib/components/ImageSlider.svelte';
   import StarRating from '$lib/components/StarRating.svelte';
   import type { Product } from '$lib/api';
   import { getProductSSE, disconnectProductSSE, queueBid as queueBidToRedis, type SSEEvent, type BidEvent } from '$lib/sse';
+  import ThreeProductShowcase from '$lib/components/three/ThreeProductShowcase.svelte';
 
-  export let data: PageData;
-  export let params: any = undefined; // SvelteKit passes this automatically
+  let { data } = $props<{ data: PageData }>();
 
   // Dynamic back link based on 'from' parameter
-  $: backLink = (() => {
-    const from = $page.url.searchParams.get('from');
+  let backLink = $derived((() => {
+    const from = page.url.searchParams.get('from');
     switch (from) {
       case 'inbox':
         // When going back to inbox, include the product parameter so the conversation is selected
@@ -25,10 +25,10 @@
       default:
         return '/products';
     }
-  })();
+  })());
 
-  $: backLinkText = (() => {
-    const from = $page.url.searchParams.get('from');
+  let backLinkText = $derived((() => {
+    const from = page.url.searchParams.get('from');
     switch (from) {
       case 'inbox':
         return 'Back to Inbox';
@@ -37,80 +37,95 @@
       default:
         return 'Back to Products';
     }
-  })();
+  })());
 
-  let bidAmount = 0;
+  let bidAmount = $state(0);
 
-  $: bidInterval = data.product?.bidInterval || 1;
-  $: minBid = (data.product?.currentBid || data.product?.startingPrice || 0) + bidInterval;
+  let bidInterval = $derived(data.product?.bidInterval || 1);
+  let minBid = $derived((data.product?.currentBid || data.product?.startingPrice || 0) + bidInterval);
 
   // Update bidAmount when minBid changes
-  $: if (minBid && bidAmount === 0) {
-    bidAmount = minBid;
-  }
-  let bidding = false;
-  let bidError = '';
-  let bidSuccess = false;
-  let showLoginModal = false;
-  let showConfirmBidModal = false;
-  let showEditModal = false;
-  let showAcceptBidModal = false;
-  let bidSectionOpen = false;
-  let censorMyName = true;
+  $effect(() => {
+    if (minBid && bidAmount === 0) {
+      bidAmount = minBid;
+    }
+  });
+  let bidding = $state(false);
+  let bidError = $state('');
+  let bidSuccess = $state(false);
+  let showLoginModal = $state(false);
+  let showConfirmBidModal = $state(false);
+  let showEditModal = $state(false);
+  let showAcceptBidModal = $state(false);
+  let bidSectionOpen = $state(false);
+  let censorMyName = $state(true);
   // Save censor name preference to localStorage when it changes
-  $: if (typeof window !== 'undefined') {
-    localStorage.setItem('bid_censor_name', String(censorMyName));
-  }
-  let accepting = false;
-  let acceptError = '';
-  let acceptSuccess = false;
+  $effect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('bid_censor_name', String(censorMyName));
+    }
+  });
+  let accepting = $state(false);
+  let acceptError = $state('');
+  let acceptSuccess = $state(false);
 
   // Seller rating data
-  let sellerRatingStats: UserRatingStats | null = null;
-  let sellerCompletedSales = 0;
-  let loadingSellerData = true;
+  let sellerRatingStats: UserRatingStats | null = $state(null);
+  let sellerCompletedSales = $state(0);
+  let loadingSellerData = $state(true);
 
   // Sort bids by amount (highest to lowest)
-  $: sortedBids = [...data.bids].sort((a, b) => b.amount - a.amount);
+  let sortedBids = $derived([...data.bids].sort((a, b) => b.amount - a.amount));
 
   // Calculate percentage increase from starting price
-  $: percentageIncrease = data.product?.currentBid && data.product?.startingPrice
+  let percentageIncrease = $derived(data.product?.currentBid && data.product?.startingPrice
     ? ((data.product.currentBid - data.product.startingPrice) / data.product.startingPrice * 100).toFixed(1)
-    : '0.0';
+    : '0.0');
 
   // Countdown timer
-  let timeRemaining = '';
-  let countdownInterval: ReturnType<typeof setInterval> | null = null;
+  let timeRemaining = $state('');
+  let countdownInterval: ReturnType<typeof setInterval> | null = $state(null);
 
   // Check if auction has ended by time (not just status)
-  $: hasAuctionEnded = data.product?.auctionEndDate
+  let hasAuctionEnded = $derived(data.product?.auctionEndDate
     ? new Date().getTime() > new Date(data.product.auctionEndDate).getTime()
-    : false;
+    : false);
 
   // Real-time update with polling
-  let pollingInterval: ReturnType<typeof setInterval> | null = null;
-  let lastKnownState = {
+  let pollingInterval: ReturnType<typeof setInterval> | null = $state(null);
+  let lastKnownState = $state({
     updatedAt: data.product?.updatedAt || '',
     latestBidTime: '',
     bidCount: data.bids.length,
     status: data.product?.status || 'active',
     currentBid: data.product?.currentBid
-  };
-  let isUpdating = false;
-  let connectionStatus: 'connected' | 'disconnected' = 'connected';
+  });
+  let isUpdating = $state(false);
+  let connectionStatus: 'connected' | 'disconnected' = $state('connected');
+
+  // Track pending timeouts for cleanup on destroy
+  let pendingTimeouts: ReturnType<typeof setTimeout>[] = [];
+  function safeTimeout(fn: () => void, delay: number): ReturnType<typeof setTimeout> {
+    const id = setTimeout(() => {
+      pendingTimeouts = pendingTimeouts.filter(t => t !== id);
+      fn();
+    }, delay);
+    pendingTimeouts.push(id);
+    return id;
+  }
 
   // Animation tracking
-  let previousBids: any[] = [...data.bids];
-  let newBidIds = new Set<string>();
-  let priceChanged = false;
-  let showConfetti = false;
-  let animatingBidId: string | null = null;
+  let previousBids: any[] = $state([...data.bids]);
+  let newBidIds = $state(new Set<string>());
+  let priceChanged = $state(false);
+  let showConfetti = $state(false);
+  let animatingBidId: string | null = $state(null);
 
   // Outbid tracking
-  let wasOutbid = false;
-  let wasHighestBidder = false;
-  let outbidAnimating = false;
-  let currentBidderMessage = '';
+  let wasOutbid = $state(false);
+  let wasHighestBidder = $state(false);
+  let outbidAnimating = $state(false);
+  let currentBidderMessage = $state('');
 
   // Random messages for highest bidder
   const highestBidderMessages = [
@@ -150,7 +165,7 @@
   }
 
   // Update bidder message when status changes
-  $: {
+  $effect(() => {
     const currentUserId = $authStore.user?.id;
     const currentHighestBidderId = highestBid ?
       (typeof highestBid.bidder === 'object' ? highestBid.bidder.id : highestBid.bidder) : null;
@@ -163,11 +178,11 @@
       outbidAnimating = true;
       currentBidderMessage = getRandomMessage(outbidMessages);
       // Reset animation after it plays
-      setTimeout(() => {
+      safeTimeout(() => {
         outbidAnimating = false;
       }, 500);
       // Auto-close the outbid alert after 5 seconds
-      setTimeout(() => {
+      safeTimeout(() => {
         wasOutbid = false;
       }, 5000);
     } else if (isCurrentlyHighest && !wasHighestBidder) {
@@ -183,29 +198,34 @@
       currentBidderMessage = getRandomMessage(highestBidderMessages);
     }
 
-    wasHighestBidder = isCurrentlyHighest;
-  }
+    wasHighestBidder = !!isCurrentlyHighest;
+  });
 
-  // Prepare chart data - bids sorted by time (oldest first)
-  $: chartData = [...data.bids]
-    .sort((a, b) => new Date(a.bidTime).getTime() - new Date(b.bidTime).getTime())
-    .map((bid, index) => ({
-      time: new Date(bid.bidTime),
-      price: bid.amount,
-      index
-    }));
+  // Prepare chart data - bids sorted by time (oldest first), with x/y calculated
+  let chartData = $derived.by(() => {
+    const sorted = [...data.bids]
+      .sort((a, b) => new Date(a.bidTime).getTime() - new Date(b.bidTime).getTime())
+      .map((bid, index) => ({
+        time: new Date(bid.bidTime),
+        price: bid.amount,
+        index,
+        x: 0,
+        y: 0
+      }));
 
-  // Calculate chart dimensions and scales
-  $: if (chartData.length > 0) {
-    const minPrice = data.product?.startingPrice || Math.min(...chartData.map(d => d.price));
-    const maxPrice = Math.max(...chartData.map(d => d.price));
-    const priceRange = maxPrice - minPrice || 1;
+    if (sorted.length > 0) {
+      const minPrice = data.product?.startingPrice || Math.min(...sorted.map(d => d.price));
+      const maxPrice = Math.max(...sorted.map(d => d.price));
+      const priceRange = maxPrice - minPrice || 1;
 
-    chartData.forEach((d: any) => {
-      d.x = (d.index / Math.max(chartData.length - 1, 1)) * 100;
-      d.y = 100 - ((d.price - minPrice) / priceRange) * 100;
-    });
-  }
+      sorted.forEach((d) => {
+        d.x = (d.index / Math.max(sorted.length - 1, 1)) * 100;
+        d.y = 100 - ((d.price - minPrice) / priceRange) * 100;
+      });
+    }
+
+    return sorted;
+  });
 
   async function updateCountdown() {
     if (!data.product?.auctionEndDate) return;
@@ -254,12 +274,14 @@
     }
   }
 
-  $: if (data.product?.auctionEndDate) {
-    updateCountdown();
-    if (!countdownInterval) {
-      countdownInterval = setInterval(updateCountdown, 1000);
+  $effect(() => {
+    if (data.product?.auctionEndDate) {
+      updateCountdown();
+      if (!countdownInterval) {
+        countdownInterval = setInterval(updateCountdown, 1000);
+      }
     }
-  }
+  });
 
   import { onMount, onDestroy } from 'svelte';
 
@@ -309,7 +331,7 @@
 
           // Trigger animations for new bids
           if (newBidIds.size > 0) {
-            setTimeout(() => {
+            safeTimeout(() => {
               newBidIds = new Set();
             }, 3000);
           }
@@ -320,11 +342,11 @@
           priceChanged = true;
           showConfetti = true;
 
-          setTimeout(() => {
+          safeTimeout(() => {
             priceChanged = false;
           }, 1000);
 
-          setTimeout(() => {
+          safeTimeout(() => {
             showConfetti = false;
           }, 3000);
         }
@@ -448,7 +470,7 @@
               }
 
               // Clear animations after delay
-              setTimeout(() => {
+              safeTimeout(() => {
                 priceChanged = false;
                 newBidIds = new Set();
               }, 3000);
@@ -470,7 +492,7 @@
             data = { ...data };
 
             // Show success feedback without refresh
-            setTimeout(() => {
+            safeTimeout(() => {
               acceptSuccess = false;
             }, 3000);
           }
@@ -528,6 +550,10 @@
     if (countdownInterval) clearInterval(countdownInterval);
     if (pollingInterval) clearInterval(pollingInterval);
 
+    // Clear all pending timeouts
+    pendingTimeouts.forEach(id => clearTimeout(id));
+    pendingTimeouts = [];
+
     // Disconnect from SSE
     if (data.product?.id) {
       disconnectProductSSE(String(data.product.id));
@@ -545,7 +571,7 @@
   }
 
   // Get the seller's currency for this product
-  $: sellerCurrency = data.product?.seller?.currency || 'PHP';
+  let sellerCurrency = $derived(data.product?.seller?.currency || 'PHP');
 
   function formatDate(dateString: string): string {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -572,7 +598,7 @@
     if (!bidAmount || bidAmount < minBid) {
       bidAmount = minBid;
       bidError = `Bid amount adjusted to minimum: ${formatPrice(minBid, sellerCurrency)}`;
-      setTimeout(() => bidError = '', 3000);
+      safeTimeout(() => bidError = '', 3000);
       return;
     }
 
@@ -586,7 +612,7 @@
       const adjustment = bidInterval - remainder;
       bidAmount = bidAmount + adjustment;
       bidError = `Bid amount must be in increments of ${formatPrice(bidInterval, sellerCurrency)}. Adjusted to ${formatPrice(bidAmount, sellerCurrency)}`;
-      setTimeout(() => bidError = '', 3000);
+      safeTimeout(() => bidError = '', 3000);
     }
   }
 
@@ -639,7 +665,7 @@
           const updatedBids = await fetchProductBids(data.product.id);
 
           // Mark the new bid for animation
-          const previousBidIds = new Set(data.bids.map(b => b.id));
+          const previousBidIds = new Set(data.bids.map((b: any) => b.id));
           newBidIds = new Set(
             updatedBids
               .filter(b => !previousBidIds.has(b.id))
@@ -660,25 +686,25 @@
         bidAmount = bidAmount + bidInterval;
 
         // Clear animations after delay
-        setTimeout(() => {
+        safeTimeout(() => {
           priceChanged = false;
         }, 1000);
 
-        setTimeout(() => {
+        safeTimeout(() => {
           showConfetti = false;
         }, 3000);
 
-        setTimeout(() => {
+        safeTimeout(() => {
           newBidIds = new Set();
         }, 3000);
 
         // Force immediate update check to get latest data
-        setTimeout(() => {
+        safeTimeout(() => {
           forceUpdateCheck();
         }, 500);
 
         // Auto-close success message after 5 seconds
-        setTimeout(() => {
+        safeTimeout(() => {
           bidSuccess = false;
         }, 5000);
       } else {
@@ -724,15 +750,15 @@
   }
 
   // Check if current user is the seller
-  $: isOwner = $authStore.user?.id && data.product?.seller?.id &&
-               $authStore.user.id === data.product.seller.id;
+  let isOwner = $derived($authStore.user?.id && data.product?.seller?.id &&
+               $authStore.user.id === data.product.seller.id);
 
   // Get highest bid
-  $: highestBid = sortedBids.length > 0 ? sortedBids[0] : null;
+  let highestBid = $derived(sortedBids.length > 0 ? sortedBids[0] : null);
 
   // Check if current user is the highest bidder
-  $: isHighestBidder = $authStore.user?.id && highestBid &&
-                       (typeof highestBid.bidder === 'object' ? highestBid.bidder.id : highestBid.bidder) === $authStore.user.id;
+  let isHighestBidder = $derived($authStore.user?.id && highestBid &&
+                       (typeof highestBid.bidder === 'object' ? highestBid.bidder.id : highestBid.bidder) === $authStore.user.id);
 
   function openEditModal() {
     if (!data.product) return;
@@ -759,7 +785,7 @@
       }
     }
 
-    setTimeout(() => {
+    safeTimeout(() => {
       closeEditModal();
     }, 1500);
   }
@@ -855,14 +881,20 @@
     <div class="product-header">
       <a href={backLink} class="back-link">&larr; {backLinkText}</a>
       {#if isOwner}
-        <button class="edit-product-btn" on:click={openEditModal}>
+        <button class="edit-product-btn" onclick={openEditModal}>
           ✏️ Edit Product
         </button>
       {/if}
     </div>
 
     <div class="product-content">
-      <div class="product-gallery">
+      <div class="product-gallery" style="position: relative; overflow: hidden;">
+        <ThreeProductShowcase
+          bidCount={data.bids.length}
+          isActive={data.product.status === 'active'}
+          currentBid={data.product.currentBid}
+          startingPrice={data.product.startingPrice}
+        />
         <div class="title-container">
           <h1>{data.product.title}</h1>
           <div
@@ -896,8 +928,8 @@
                 <!-- Gradient definition -->
                 <defs>
                   <linearGradient id="price-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" style="stop-color:#dc2626;stop-opacity:0.5" />
-                    <stop offset="100%" style="stop-color:#dc2626;stop-opacity:0" />
+                    <stop offset="0%" style="stop-color:#000000;stop-opacity:0.3" />
+                    <stop offset="100%" style="stop-color:#000000;stop-opacity:0" />
                   </linearGradient>
                 </defs>
 
@@ -1024,7 +1056,7 @@
             {#if showConfetti}
               <div class="confetti-container">
                 {#each Array(50) as _, i}
-                  <div class="confetti" style="--delay: {i * 0.02}s; --x: {Math.random() * 100}%; --rotation: {Math.random() * 360}deg; --color: {['#ff6b6b', '#4ecdc4', '#45b7d1', '#feca57', '#ff6348', '#1dd1a1'][i % 6]}"></div>
+                  <div class="confetti" style="--delay: {i * 0.02}s; --x: {Math.random() * 100}%; --rotation: {Math.random() * 360}deg; --color: {['#000', '#525252', '#E5E5E5', '#000', '#525252', '#E5E5E5'][i % 6]}"></div>
                 {/each}
               </div>
             {/if}
@@ -1054,7 +1086,7 @@
                 </div>
                 <div class="starting-price-small">Starting price: {formatPrice(data.product.startingPrice, sellerCurrency)}</div>
                 {#if !isOwner}
-                  <button class="bid-toggle-pill" on:click={() => bidSectionOpen = !bidSectionOpen} aria-label={bidSectionOpen ? 'Hide bid form' : 'Show bid form'}>
+                  <button class="bid-toggle-pill" onclick={() => bidSectionOpen = !bidSectionOpen} aria-label={bidSectionOpen ? 'Hide bid form' : 'Show bid form'}>
                     <span class="pill-text">{bidSectionOpen ? 'Close' : 'Place Bid'}</span>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class:chevron-up={bidSectionOpen}>
                       <polyline points="6 9 12 15 18 9"></polyline>
@@ -1070,7 +1102,7 @@
                 <div class="highest-bid-amount">{formatPrice(data.product.startingPrice, sellerCurrency)}</div>
                 <div class="starting-price-small">No bids yet - be the first!</div>
                 {#if !isOwner}
-                  <button class="bid-toggle-pill" on:click={() => bidSectionOpen = !bidSectionOpen} aria-label={bidSectionOpen ? 'Hide bid form' : 'Show bid form'}>
+                  <button class="bid-toggle-pill" onclick={() => bidSectionOpen = !bidSectionOpen} aria-label={bidSectionOpen ? 'Hide bid form' : 'Show bid form'}>
                     <span class="pill-text">{bidSectionOpen ? 'Close' : 'Place Bid'}</span>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class:chevron-up={bidSectionOpen}>
                       <polyline points="6 9 12 15 18 9"></polyline>
@@ -1101,7 +1133,7 @@
                   <p class="bidder-info">by {getBidderName(highestBid)}</p>
                 </div>
 
-                <button class="accept-bid-btn" on:click={openAcceptBidModal}>
+                <button class="accept-bid-btn" onclick={openAcceptBidModal}>
                   ✓ Accept Bid & Close Auction
                 </button>
               {:else}
@@ -1137,7 +1169,7 @@
                       <div class="bid-control">
                         <button
                           class="bid-arrow-btn"
-                          on:click={decrementBid}
+                          onclick={decrementBid}
                           disabled={bidding || bidAmount <= minBid}
                           type="button"
                           aria-label="Decrease bid"
@@ -1150,14 +1182,14 @@
                           type="number"
                           class="bid-amount-input"
                           bind:value={bidAmount}
-                          on:blur={validateBidAmount}
+                          onblur={validateBidAmount}
                           min={minBid}
                           step={bidInterval}
                           disabled={bidding}
                         />
                         <button
                           class="bid-arrow-btn"
-                          on:click={incrementBid}
+                          onclick={incrementBid}
                           disabled={bidding}
                           type="button"
                           aria-label="Increase bid"
@@ -1167,7 +1199,7 @@
                           </svg>
                         </button>
                       </div>
-                      <button class="place-bid-btn" on:click={handlePlaceBid} disabled={bidding}>
+                      <button class="place-bid-btn" onclick={handlePlaceBid} disabled={bidding}>
                         {bidding ? 'Placing Bid...' : 'Place Bid'}
                       </button>
                     </div>
@@ -1291,9 +1323,9 @@
 
 <!-- Confirm Bid Modal -->
 {#if showConfirmBidModal && data.product}
-  <div class="modal-overlay" on:click={cancelBid}>
-    <div class="modal-content confirm-modal" on:click|stopPropagation>
-      <button class="modal-close" on:click={cancelBid}>&times;</button>
+  <div class="modal-overlay" onclick={cancelBid}>
+    <div class="modal-content confirm-modal" onclick={(e) => e.stopPropagation()}>
+      <button class="modal-close" onclick={cancelBid}>&times;</button>
 
       <div class="modal-header">
         <h2>Confirm Your Bid</h2>
@@ -1340,10 +1372,10 @@
         </div>
 
         <div class="modal-actions">
-          <button class="btn-cancel-bid" on:click={cancelBid}>
+          <button class="btn-cancel-bid" onclick={cancelBid}>
             Cancel
           </button>
-          <button class="btn-confirm-bid" on:click={confirmPlaceBid}>
+          <button class="btn-confirm-bid" onclick={confirmPlaceBid}>
             Confirm Bid
           </button>
         </div>
@@ -1356,7 +1388,7 @@
 {#if showAcceptBidModal && highestBid}
   <div class="modal-overlay">
     <div class="modal-content confirm-modal">
-      <button class="modal-close" on:click={closeAcceptBidModal}>&times;</button>
+      <button class="modal-close" onclick={closeAcceptBidModal}>&times;</button>
 
       <div class="modal-header">
         <h2>Accept Bid & Close Auction</h2>
@@ -1401,10 +1433,10 @@
         </div>
 
         <div class="modal-actions">
-          <button class="btn-cancel-bid" on:click={closeAcceptBidModal} disabled={accepting}>
+          <button class="btn-cancel-bid" onclick={closeAcceptBidModal} disabled={accepting}>
             Cancel
           </button>
-          <button class="btn-accept-bid" on:click={confirmAcceptBid} disabled={accepting}>
+          <button class="btn-accept-bid" onclick={confirmAcceptBid} disabled={accepting}>
             {accepting ? 'Accepting...' : 'Accept Bid & Close'}
           </button>
         </div>
@@ -1418,7 +1450,7 @@
   <div class="success-toast">
     <div class="toast-confetti">
       {#each Array(20) as _, i}
-        <div class="toast-confetti-piece" style="--i: {i}; --x: {Math.random() * 100}%; --delay: {Math.random() * 0.5}s; --color: {['#ff6b6b', '#4ecdc4', '#45b7d1', '#feca57', '#ff6348', '#1dd1a1', '#667eea', '#f368e0'][i % 8]}"></div>
+        <div class="toast-confetti-piece" style="--i: {i}; --x: {Math.random() * 100}%; --delay: {Math.random() * 0.5}s; --color: {['#000', '#525252', '#E5E5E5', '#000', '#525252', '#E5E5E5', '#000', '#525252'][i % 8]}"></div>
       {/each}
     </div>
     <div class="toast-content">
@@ -1431,7 +1463,7 @@
         <span class="toast-title">Bid Placed Successfully!</span>
         <span class="toast-subtitle">You're now the highest bidder</span>
       </div>
-      <button class="toast-close" on:click={closeSuccessAlert} aria-label="Close">
+      <button class="toast-close" onclick={closeSuccessAlert} aria-label="Close">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -1444,9 +1476,9 @@
 
 <!-- Login Modal -->
 {#if showLoginModal}
-  <div class="modal-overlay" on:click={closeModal}>
-    <div class="modal-content" on:click|stopPropagation>
-      <button class="modal-close" on:click={closeModal}>&times;</button>
+  <div class="modal-overlay" onclick={closeModal}>
+    <div class="modal-content" onclick={(e) => e.stopPropagation()}>
+      <button class="modal-close" onclick={closeModal}>&times;</button>
 
       <div class="modal-header">
         <h2>🔒 Login Required</h2>
@@ -1476,7 +1508,7 @@
 {#if showEditModal}
   <div class="modal-overlay">
     <div class="modal-content edit-modal">
-      <button class="modal-close" on:click={closeEditModal}>&times;</button>
+      <button class="modal-close" onclick={closeEditModal}>&times;</button>
 
       <div class="modal-header">
         <h2>Edit Product</h2>
@@ -1501,8 +1533,8 @@
   }
 
   .error a {
-    color: #0066cc;
-    text-decoration: none;
+    color: #000;
+    text-decoration: underline;
   }
 
   .product-detail {
@@ -1519,25 +1551,29 @@
 
   .edit-product-btn {
     padding: 0.75rem 1.5rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border: none;
-    border-radius: 8px;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.2s, color 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .edit-product-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .back-link {
-    color: #0066cc;
+    color: #000;
     text-decoration: none;
     font-size: 1.1rem;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.05em;
   }
 
   .back-link:hover {
@@ -1750,26 +1786,45 @@
     font-size: 2.5rem;
     margin-top: 0;
     margin-bottom: 1rem;
-    color: #333;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .status-badge {
     display: inline-block;
     padding: 0.5rem 1rem;
-    border-radius: 4px;
     font-weight: bold;
     text-transform: uppercase;
     margin-bottom: 1.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.1em;
   }
 
   .status-active {
-    background-color: #10b981;
-    color: white;
+    background: #000;
+    color: #fff;
+  }
+
+  .status-available {
+    background: #000;
+    color: #fff;
+  }
+
+  .status-sold {
+    background: #000;
+    color: #fff;
   }
 
   .status-ended {
-    background-color: #ef4444;
-    color: white;
+    background: #fff;
+    color: #000;
+    border: 2px solid #000;
+  }
+
+  .status-cancelled {
+    background: #fff;
+    color: #525252;
+    border: 1px solid #525252;
   }
 
   .bid-section-header-wrapper {
@@ -1796,14 +1851,14 @@
 
   .bid-section-header-btn h3 {
     margin: 0;
-    color: #1f2937;
+    color: #000;
     font-size: 1.5rem;
     text-align: left;
   }
 
   .accordion-arrow {
     transition: transform 0.3s ease;
-    color: #ef4444;
+    color: #000;
   }
 
   .accordion-arrow.open {
@@ -1814,10 +1869,8 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    background: #000;
     padding: 0.75rem 1.25rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
   }
 
   .countdown-timer-inline .countdown-label {
@@ -1826,24 +1879,22 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .countdown-timer-inline .countdown-time {
-    color: white;
+    color: #fff;
     font-size: 1.5rem;
     font-weight: 900;
-    font-family: 'Courier New', monospace;
+    font-family: 'JetBrains Mono', monospace;
     letter-spacing: 1.5px;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
   }
 
   .price-info {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #000;
     padding: 2rem;
-    border-radius: 12px;
     margin-bottom: 1.5rem;
     text-align: center;
-    box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1873,6 +1924,8 @@
     opacity: 0.95;
     width: 100%;
     margin-bottom: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
   }
 
   .countdown-timer-badge {
@@ -1882,15 +1935,14 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    background: #000;
     padding: 0.75rem 1.25rem;
-    border-radius: 0 12px 0 12px;
     font-size: 0.875rem;
     font-weight: 700;
     border: none;
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
     margin: 0;
     z-index: 10;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .countdown-timer-badge .countdown-label {
@@ -1900,11 +1952,10 @@
   }
 
   .countdown-timer-badge .countdown-time {
-    color: #ffffff;
+    color: #fff;
     font-weight: 900;
     letter-spacing: 1px;
-    font-family: 'Courier New', monospace;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .bid-with-percentage {
@@ -1920,8 +1971,8 @@
     font-size: 3.5rem;
     font-weight: 900;
     line-height: 1;
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     margin-bottom: 0;
+    font-family: 'Playfair Display', serif;
   }
 
   .percentage-increase {
@@ -1930,104 +1981,54 @@
     justify-content: center;
     gap: 0.375rem;
     padding: 0.625rem 1rem;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    border: 2px solid #047857;
-    border-radius: 50px;
-    animation: percentageBounce 2s ease-in-out infinite, percentageGlow 2s ease-in-out infinite;
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+    background: #fff;
+    border: 2px solid #000;
+    color: #000;
   }
 
   .arrow-up-icon {
-    color: white;
-    animation: arrowBounce 1s ease-in-out infinite;
+    color: #000;
     flex-shrink: 0;
   }
 
   .percentage-text {
     font-size: 1.25rem;
     font-weight: 900;
-    color: white;
+    color: #000;
     letter-spacing: 0.5px;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    font-family: 'JetBrains Mono', monospace;
   }
 
-  @keyframes percentageBounce {
-    0%, 100% {
-      transform: scale(1);
-    }
-    50% {
-      transform: scale(1.05);
-    }
-  }
-
-  @keyframes percentageGlow {
-    0%, 100% {
-      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
-      border-color: #047857;
-    }
-    50% {
-      box-shadow: 0 6px 24px rgba(16, 185, 129, 0.7);
-      border-color: #10b981;
-    }
-  }
-
-  @keyframes arrowBounce {
-    0%, 100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-4px);
-    }
-  }
+  /* Decorative animations removed for monochrome design */
 
   .starting-price-small {
     font-size: 0.95rem;
     opacity: 0.9;
     font-weight: 500;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   /* Inactive Warning Banner */
   .inactive-warning {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    color: white;
+    background: #fff;
+    color: #000;
     padding: 1rem 1.5rem;
-    border-radius: 8px;
     margin-bottom: 1.5rem;
     display: flex;
     align-items: center;
     gap: 0.75rem;
     font-weight: 600;
-    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
-    animation: warningPulse 2s ease-in-out infinite;
+    border: 4px solid #000;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .warning-icon {
     font-size: 1.5rem;
-    animation: warningBounce 1s ease-in-out infinite;
-  }
-
-  @keyframes warningPulse {
-    0%, 100% {
-      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
-    }
-    50% {
-      box-shadow: 0 6px 20px rgba(245, 158, 11, 0.5);
-    }
-  }
-
-  @keyframes warningBounce {
-    0%, 100% {
-      transform: scale(1);
-    }
-    50% {
-      transform: scale(1.1);
-    }
   }
 
   /* Sold Info Styles */
   .sold-info {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
-    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4) !important;
+    background: #000 !important;
   }
 
   .sold-badge {
@@ -2035,121 +2036,73 @@
     font-weight: 900;
     letter-spacing: 3px;
     margin-bottom: 0.75rem;
-    color: white;
-    background-color: rgba(255, 255, 255, 0.2);
+    color: #000;
+    background: #fff;
     padding: 0.5rem 1.5rem;
-    border-radius: 50px;
     display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
   }
 
   .sold-to-info {
     font-size: 1.1rem;
     font-weight: 600;
     margin-top: 0.75rem;
-    color: white;
+    color: #fff;
     opacity: 0.95;
   }
 
   /* Highest Bidder Alert */
   .highest-bidder-alert {
-    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-    border: 3px solid #d97706;
-    border-radius: 12px;
+    background: #F5F5F5;
+    border: 4px solid #000;
     padding: 1.25rem 1.5rem;
     margin-bottom: 1.5rem;
     display: flex;
     align-items: center;
     gap: 1rem;
-    box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4);
-    animation: alertPulse 2s ease-in-out infinite;
-  }
-
-  @keyframes alertPulse {
-    0%, 100% {
-      box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4);
-      transform: scale(1);
-    }
-    50% {
-      box-shadow: 0 6px 24px rgba(245, 158, 11, 0.6);
-      transform: scale(1.02);
-    }
   }
 
   .alert-icon {
     font-size: 2rem;
-    animation: crownBounce 1.5s ease-in-out infinite;
-  }
-
-  @keyframes crownBounce {
-    0%, 100% {
-      transform: translateY(0) rotate(-10deg);
-    }
-    50% {
-      transform: translateY(-5px) rotate(10deg);
-    }
   }
 
   .alert-text {
     font-size: 1.25rem;
     font-weight: 700;
-    color: #78350f;
+    color: #000;
     letter-spacing: 0.5px;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   /* Animate in effect for highest bidder */
   .highest-bidder-alert.animate-in {
-    animation: slideInBounce 0.5s ease-out, alertPulse 2s ease-in-out 0.5s infinite;
-  }
-
-  @keyframes slideInBounce {
-    0% {
-      opacity: 0;
-      transform: translateY(-20px) scale(0.9);
-    }
-    60% {
-      transform: translateY(5px) scale(1.02);
-    }
-    100% {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
+    animation: fadeIn 0.3s ease-out;
   }
 
   /* Outbid Alert */
   .outbid-alert {
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-    border: 3px solid #b91c1c;
-    border-radius: 12px;
+    background: #000;
+    border: 4px solid #000;
     padding: 1.25rem 1.5rem;
     margin-bottom: 1.5rem;
     display: flex;
     align-items: center;
     gap: 1rem;
-    box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
-    animation: outbidPulse 1.5s ease-in-out infinite;
   }
 
   .outbid-alert .alert-icon {
     font-size: 2rem;
-    animation: panicShake 0.5s ease-in-out infinite;
   }
 
   .outbid-alert .alert-text {
-    color: #fef2f2;
+    color: #fff;
     flex: 1;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .outbid-alert.shake {
     animation: shakeAlert 0.5s ease-in-out;
-  }
-
-  @keyframes outbidPulse {
-    0%, 100% {
-      box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
-    }
-    50% {
-      box-shadow: 0 6px 24px rgba(239, 68, 68, 0.6);
-    }
   }
 
   @keyframes shakeAlert {
@@ -2158,31 +2111,12 @@
     20%, 40%, 60%, 80% { transform: translateX(8px); }
   }
 
-  @keyframes panicShake {
-    0%, 100% { transform: rotate(-15deg); }
-    50% { transform: rotate(15deg); }
-  }
-
   /* Winner Alert */
   .winner-alert {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    border: 3px solid #047857;
-    border-radius: 12px;
+    background: #F5F5F5;
+    border: 4px solid #000;
     padding: 1.5rem;
     margin-bottom: 1.5rem;
-    box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
-    animation: winnerPulse 2s ease-in-out infinite;
-  }
-
-  @keyframes winnerPulse {
-    0%, 100% {
-      box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
-      transform: scale(1);
-    }
-    50% {
-      box-shadow: 0 6px 28px rgba(16, 185, 129, 0.6);
-      transform: scale(1.01);
-    }
   }
 
   .winner-alert-header {
@@ -2194,30 +2128,18 @@
 
   .winner-alert-header .alert-icon {
     font-size: 2.5rem;
-    animation: celebrationBounce 1s ease-in-out infinite;
-  }
-
-  @keyframes celebrationBounce {
-    0%, 100% {
-      transform: scale(1) rotate(0deg);
-    }
-    25% {
-      transform: scale(1.1) rotate(-10deg);
-    }
-    75% {
-      transform: scale(1.1) rotate(10deg);
-    }
   }
 
   .winner-alert-header .alert-text {
     font-size: 1.5rem;
     font-weight: 800;
-    color: white;
+    color: #000;
     letter-spacing: 0.5px;
+    font-family: 'Playfair Display', serif;
   }
 
   .winner-alert-message {
-    color: #f0fdf4;
+    color: #525252;
     font-size: 1rem;
     margin-bottom: 1rem;
     line-height: 1.5;
@@ -2229,30 +2151,31 @@
     justify-content: center;
     gap: 0.5rem;
     padding: 0.875rem 1.5rem;
-    background: white;
-    color: #059669;
+    background: #000;
+    color: #fff;
     text-decoration: none;
-    border-radius: 8px;
     font-weight: 700;
     font-size: 1.125rem;
-    transition: all 0.2s;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: background 0.2s, color 0.2s;
+    border: 2px solid #000;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .winner-message-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    background: #f0fdf4;
+    background: #fff;
+    color: #000;
   }
 
   .bid-section {
-    background-color: #e7f3ff;
+    background-color: #F5F5F5;
     padding: 1.5rem;
-    border-radius: 8px;
     margin-bottom: 2rem;
     display: flex;
     flex-direction: column;
     transition: all 0.3s ease;
+    border: 2px solid #000;
   }
 
   /* Collapsible bid section styles */
@@ -2292,26 +2215,26 @@
     width: auto;
     margin: 0.75rem auto 0;
     padding: 0.625rem 1.25rem;
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-    border: none;
-    border-radius: 50px;
+    background: #fff;
+    border: 2px solid #000;
     cursor: pointer;
-    color: white;
+    color: #000;
     font-weight: 600;
     font-size: 0.9rem;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
-    transition: all 0.2s ease;
+    transition: background 0.2s, color 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .bid-toggle-pill:hover {
-    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-    transform: translateY(-1px);
+    background: #000;
+    color: #fff;
   }
 
   .bid-toggle-pill:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
+    background: #000;
+    color: #fff;
   }
 
   .bid-toggle-pill .pill-text {
@@ -2334,33 +2257,33 @@
   }
 
   .auction-ended-section {
-    background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+    background: #F5F5F5;
     padding: 2rem;
-    border-radius: 12px;
     margin-bottom: 2rem;
     text-align: center;
-    border: 2px solid #d1d5db;
+    border: 4px solid #000;
   }
 
   .ended-header h3 {
     font-size: 1.5rem;
-    color: #374151;
+    color: #000;
     margin-bottom: 1.5rem;
+    font-family: 'Playfair Display', serif;
   }
 
   .winner-info {
-    background: white;
+    background: #fff;
     padding: 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border: 2px solid #000;
   }
 
   .winner-label {
     font-size: 0.875rem;
-    color: #6b7280;
+    color: #525252;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     margin-bottom: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .winner-amount-with-increase {
@@ -2374,19 +2297,20 @@
   .winner-amount {
     font-size: 2.5rem;
     font-weight: 700;
-    color: #10b981;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .winner-percentage-increase {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
+    background: #000;
+    color: #fff;
     padding: 0.375rem 0.75rem;
-    border-radius: 6px;
     font-size: 0.875rem;
     font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .winner-percentage-increase .arrow-up-icon {
@@ -2397,15 +2321,16 @@
 
   .winner-bidder {
     font-size: 1.125rem;
-    color: #374151;
+    color: #000;
     font-weight: 500;
     margin-bottom: 0.5rem;
   }
 
   .starting-price-note {
     font-size: 0.875rem;
-    color: #6b7280;
+    color: #525252;
     margin-top: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .no-winner-info {
@@ -2420,13 +2345,14 @@
   .no-winner-text {
     font-size: 1.5rem;
     font-weight: 700;
-    color: #ef4444;
+    color: #000;
     margin-bottom: 0.5rem;
+    font-family: 'Playfair Display', serif;
   }
 
   .no-winner-desc {
     font-size: 1rem;
-    color: #6b7280;
+    color: #525252;
   }
 
   .contact-section {
@@ -2437,19 +2363,22 @@
     display: block;
     width: 100%;
     padding: 1rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
+    background: #000;
+    color: #fff;
     text-align: center;
     text-decoration: none;
-    border-radius: 8px;
     font-weight: 600;
     font-size: 1.1rem;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.2s, color 0.2s;
+    border: 2px solid #000;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .contact-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .bid-form {
@@ -2485,16 +2414,19 @@
     display: block;
     margin-bottom: 0.5rem;
     font-weight: 600;
-    color: #333;
+    color: #000;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.85rem;
   }
 
   .bid-control {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background-color: white;
-    border: 2px solid #667eea;
-    border-radius: 8px;
+    background-color: #fff;
+    border: 2px solid #000;
     padding: 0.5rem;
     flex: 1;
     min-height: 64px;
@@ -2503,31 +2435,33 @@
   }
 
   .bid-arrow-btn {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: none;
-    border-radius: 6px;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
     width: 48px;
     height: 48px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.2s, color 0.2s;
     flex-shrink: 0;
   }
 
   .bid-arrow-btn:hover:not(:disabled) {
-    transform: scale(1.1);
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .bid-arrow-btn:active:not(:disabled) {
-    transform: scale(0.95);
+    background: #fff;
+    color: #000;
   }
 
   .bid-arrow-btn:disabled {
-    background: #e5e7eb;
+    background: #E5E5E5;
+    border-color: #E5E5E5;
+    color: #525252;
     cursor: not-allowed;
     opacity: 0.5;
   }
@@ -2541,8 +2475,9 @@
     text-align: center;
     font-size: 1.75rem;
     font-weight: 700;
-    color: #667eea;
+    color: #000;
     padding: 0.5rem;
+    font-family: 'Playfair Display', serif;
   }
 
   .bid-amount-input {
@@ -2550,19 +2485,19 @@
     text-align: center;
     font-size: clamp(1.25rem, 4vw, 1.75rem);
     font-weight: 700;
-    color: #667eea;
+    color: #000;
     padding: 0.25rem;
     border: none;
     background: transparent;
     outline: none;
     width: 100%;
     min-width: 0;
+    font-family: 'Playfair Display', serif;
   }
 
   .bid-amount-input:focus {
-    color: #4c63d2;
-    background: rgba(102, 126, 234, 0.05);
-    border-radius: 4px;
+    color: #000;
+    background: #F5F5F5;
   }
 
   .bid-amount-input::-webkit-inner-spin-button,
@@ -2579,65 +2514,71 @@
     margin-top: 0.5rem;
     margin-bottom: 0;
     font-size: 0.9rem;
-    color: #666;
+    color: #525252;
     font-weight: 500;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .place-bid-btn {
     padding: 0 2.5rem;
     font-size: 1.1rem;
     font-weight: 700;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
-    border: none;
-    border-radius: 8px;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.2s, color 0.2s;
     white-space: nowrap;
     min-height: 64px;
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .place-bid-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .place-bid-btn:disabled {
-    background: #ccc;
+    background: #E5E5E5;
+    border-color: #E5E5E5;
+    color: #525252;
     cursor: not-allowed;
-    transform: none;
   }
 
   .success-message {
-    background-color: #10b981;
-    color: white;
+    background: #F5F5F5;
+    color: #000;
     padding: 1rem;
-    border-radius: 4px;
     margin-bottom: 1rem;
     animation: slideDown 0.3s ease-out;
+    border: 2px solid #000;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .error-message {
-    background-color: #ef4444;
-    color: white;
+    background: #000;
+    color: #fff;
     padding: 1rem;
-    border-radius: 4px;
     margin-bottom: 1rem;
     animation: slideDown 0.3s ease-out;
+    border: 2px solid #000;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .info-message {
-    background-color: #3b82f6;
-    color: white;
+    background: #F5F5F5;
+    color: #000;
     padding: 1rem;
-    border-radius: 6px;
     margin-bottom: 1rem;
     text-align: center;
     animation: slideDown 0.3s ease-out;
+    border: 2px solid #000;
   }
 
   .info-message p {
@@ -2653,14 +2594,15 @@
   .description-section h3,
   .seller-info h3 {
     margin-bottom: 1rem;
+    font-family: 'Playfair Display', serif;
+    color: #000;
   }
 
   /* Seller Card Styles */
   .seller-card {
-    background: #f8f9fa;
-    border-radius: 12px;
+    background: #F5F5F5;
     padding: 1.25rem;
-    border: 1px solid #e9ecef;
+    border: 2px solid #000;
   }
 
   .seller-header {
@@ -2673,14 +2615,14 @@
   .seller-avatar {
     width: 48px;
     height: 48px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border-radius: 50%;
+    background: #000;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: white;
+    color: #fff;
     font-weight: 600;
     font-size: 1.25rem;
+    font-family: 'Playfair Display', serif;
   }
 
   .seller-details {
@@ -2691,18 +2633,20 @@
 
   .seller-name {
     font-weight: 600;
-    color: #333;
+    color: #000;
     text-decoration: none;
     font-size: 1.1rem;
   }
 
   .seller-name:hover {
-    color: #667eea;
+    text-decoration: underline;
+    color: #000;
   }
 
   .member-since {
     font-size: 0.8rem;
-    color: #666;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .seller-stats {
@@ -2710,8 +2654,8 @@
     align-items: center;
     gap: 1rem;
     padding: 0.875rem 0;
-    border-top: 1px solid #e9ecef;
-    border-bottom: 1px solid #e9ecef;
+    border-top: 1px solid #E5E5E5;
+    border-bottom: 1px solid #E5E5E5;
     margin-bottom: 1rem;
   }
 
@@ -2731,31 +2675,33 @@
   .stat-value {
     font-weight: 600;
     font-size: 1.1rem;
-    color: #333;
+    color: #000;
   }
 
   .stat-label {
     font-size: 0.75rem;
-    color: #666;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .stat-title {
     font-size: 0.7rem;
     font-weight: 600;
-    color: #667eea;
+    color: #000;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .stat-divider {
     width: 1px;
     height: 40px;
-    background: #e9ecef;
+    background: #E5E5E5;
   }
 
   .loading-stats {
     font-size: 0.85rem;
-    color: #666;
+    color: #525252;
     padding: 0.5rem 0;
   }
 
@@ -2764,32 +2710,34 @@
     align-items: center;
     gap: 0.375rem;
     font-size: 0.85rem;
-    color: #666;
+    color: #525252;
     margin-bottom: 1rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .seller-location svg {
-    color: #dc2626;
+    color: #000;
   }
 
   .view-profile-btn {
     display: block;
     width: 100%;
     padding: 0.75rem;
-    background: white;
-    border: 1px solid #e9ecef;
-    border-radius: 8px;
+    background: transparent;
+    border: 2px solid #000;
     text-align: center;
-    color: #333;
+    color: #000;
     font-weight: 500;
     text-decoration: none;
-    transition: all 0.2s ease;
+    transition: background 0.2s, color 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .view-profile-btn:hover {
-    background: #667eea;
-    border-color: #667eea;
-    color: white;
+    background: #000;
+    color: #fff;
   }
 
   /* Price Analytics */
@@ -2801,14 +2749,14 @@
     margin-top: 0;
     margin-bottom: 1rem;
     font-size: 1.3rem;
-    color: #333;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .chart-container {
     padding: 1.5rem;
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    background: #fff;
+    border: 2px solid #000;
   }
 
   .price-chart {
@@ -2818,35 +2766,35 @@
   }
 
   .grid-line {
-    stroke: #e5e7eb;
+    stroke: #E5E5E5;
     stroke-width: 0.2;
   }
 
   .price-area {
     fill: url(#price-gradient);
-    opacity: 0.2;
+    opacity: 0.1;
   }
 
   .price-line {
     fill: none;
-    stroke: #dc2626;
+    stroke: #000;
     stroke-width: 1;
     vector-effect: non-scaling-stroke;
   }
 
   .data-point {
-    fill: #dc2626;
-    stroke: white;
+    fill: #000;
+    stroke: #fff;
     stroke-width: 0.5;
     vector-effect: non-scaling-stroke;
   }
 
   .data-point.first-point {
-    fill: #10b981;
+    fill: #525252;
   }
 
   .data-point.last-point {
-    fill: #f59e0b;
+    fill: #000;
     r: 2;
   }
 
@@ -2856,9 +2804,8 @@
     align-items: flex-start;
     margin-top: 1rem;
     padding: 1rem;
-    background: white;
-    border-radius: 8px;
-    border: 2px solid #f0f0f0;
+    background: #fff;
+    border: 1px solid #E5E5E5;
   }
 
   .label-left,
@@ -2877,29 +2824,31 @@
 
   .label-title {
     font-size: 0.75rem;
-    color: #999;
+    color: #525252;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: 0.25rem;
     font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .label-value {
     font-size: 1.1rem;
     font-weight: 700;
-    color: #dc2626;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .label-left .label-value {
-    color: #10b981;
+    color: #525252;
   }
 
   .label-right .label-value {
-    color: #f59e0b;
+    color: #000;
   }
 
   .label-center .label-title {
-    color: #667eea;
+    color: #000;
     font-size: 0.9rem;
   }
 
@@ -2912,7 +2861,8 @@
     margin-top: 0;
     margin-bottom: 1rem;
     font-size: 1.3rem;
-    color: #333;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .bid-history-list {
@@ -2927,39 +2877,36 @@
     align-items: center;
     gap: calc(1rem * var(--scale));
     padding: calc(1rem * var(--scale));
-    background-color: #f9fafb;
-    border-radius: 8px;
-    border: 2px solid #e5e7eb;
+    background-color: #fff;
+    border: 1px solid #E5E5E5;
     transition: all 0.2s;
   }
 
   .bid-history-item:hover {
-    border-color: #667eea;
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
+    border-color: #000;
   }
 
-  /* Gold styling for #1 ranked bid */
+  /* Top bid styling for #1 ranked bid */
   .bid-history-item.rank-1 {
-    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-    border: 3px solid #f59e0b;
-    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+    background: #000;
+    border: 4px solid #000;
     position: relative;
   }
 
   .bid-history-item.rank-1:hover {
-    border-color: #d97706;
-    box-shadow: 0 6px 16px rgba(245, 158, 11, 0.4);
+    border-color: #000;
   }
 
   .bid-rank {
     font-size: calc(1rem * var(--scale));
     font-weight: 700;
-    color: #667eea;
+    color: #000;
     min-width: calc(35px * var(--scale));
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .bid-history-item.rank-1 .bid-rank {
-    color: #f59e0b;
+    color: #fff;
     font-size: calc(1.2rem * var(--scale));
   }
 
@@ -2970,15 +2917,17 @@
   .bid-amount {
     font-size: calc(1.3rem * var(--scale));
     font-weight: 700;
-    color: #333;
+    color: #000;
     margin-bottom: calc(0.25rem * var(--scale));
+    font-family: 'Playfair Display', serif;
   }
 
   .bid-details {
     display: flex;
     gap: 1rem;
     font-size: calc(0.9rem * var(--scale));
-    color: #666;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .bidder-name {
@@ -2990,26 +2939,31 @@
   }
 
   .bid-history-item.rank-1 .bid-amount {
-    color: #f59e0b;
+    color: #fff;
     font-weight: 900;
   }
 
   .bid-history-item.rank-1 .bidder-name {
-    color: #92400e;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .bid-history-item.rank-1 .bid-details {
+    color: rgba(255, 255, 255, 0.7);
   }
 
   .highest-badge {
     position: absolute;
     top: -0.75rem;
     right: 1rem;
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    color: white;
+    background: #fff;
+    color: #000;
     padding: 0.375rem 0.875rem;
-    border-radius: 12px;
     font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.5px;
-    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+    border: 2px solid #000;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
   }
 
   /* Modal Styles */
@@ -3039,13 +2993,12 @@
   }
 
   .modal-content {
-    background-color: white;
-    border-radius: 12px;
+    background-color: #fff;
     max-width: 500px;
     width: 90%;
     max-height: calc(100vh - 2rem);
     overflow-y: auto;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    border: 4px solid #000;
     position: relative;
     animation: slideUp 0.3s ease-out;
     margin: auto;
@@ -3067,9 +3020,9 @@
     top: 1rem;
     right: 1rem;
     background: none;
-    border: none;
+    border: 2px solid #000;
     font-size: 2rem;
-    color: #999;
+    color: #000;
     cursor: pointer;
     line-height: 1;
     padding: 0;
@@ -3078,13 +3031,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
-    transition: all 0.2s;
+    transition: background 0.2s, color 0.2s;
   }
 
   .modal-close:hover {
-    background-color: #f0f0f0;
-    color: #333;
+    background: #000;
+    color: #fff;
   }
 
   .modal-header {
@@ -3095,7 +3047,8 @@
   .modal-header h2 {
     margin: 0;
     font-size: 1.75rem;
-    color: #333;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .modal-body {
@@ -3105,7 +3058,7 @@
 
   .modal-body > p {
     font-size: 1.1rem;
-    color: #666;
+    color: #525252;
     margin-bottom: 2rem;
   }
 
@@ -3119,37 +3072,41 @@
   .btn-register {
     flex: 1;
     padding: 1rem 2rem;
-    border-radius: 8px;
     text-decoration: none;
     font-weight: 600;
     font-size: 1.1rem;
     text-align: center;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.2s, color 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .btn-login {
-    background-color: #0066cc;
-    color: white;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
   }
 
   .btn-login:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 102, 204, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .btn-register {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    background: transparent;
+    color: #000;
+    border: 2px solid #000;
   }
 
   .btn-register:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    background: #000;
+    color: #fff;
   }
 
   .modal-note {
     font-size: 0.9rem;
-    color: #999;
+    color: #525252;
     margin: 0;
   }
 
@@ -3165,16 +3122,16 @@
   .product-title {
     font-size: 1.25rem;
     font-weight: 700;
-    color: #333;
+    color: #000;
     margin: 0 0 1.5rem 0;
     padding-bottom: 1rem;
-    border-bottom: 2px solid #e5e7eb;
+    border-bottom: 2px solid #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .bid-confirmation {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #000;
     padding: 1.5rem;
-    border-radius: 12px;
     margin-bottom: 1.5rem;
   }
 
@@ -3203,19 +3160,19 @@
   .confirm-row .bid-value {
     font-size: 1.75rem;
     font-weight: 900;
+    font-family: 'Playfair Display', serif;
   }
 
   .confirm-message {
     font-size: 1rem;
-    color: #666;
+    color: #525252;
     margin: 0 0 1.5rem 0;
     line-height: 1.6;
   }
 
   .privacy-toggle {
-    background-color: #f9fafb;
-    border: 2px solid #e5e7eb;
-    border-radius: 8px;
+    background-color: #F5F5F5;
+    border: 2px solid #000;
     padding: 1rem;
     margin-bottom: 1.5rem;
   }
@@ -3232,54 +3189,58 @@
     width: 20px;
     height: 20px;
     cursor: pointer;
-    accent-color: #dc2626;
+    accent-color: #000;
   }
 
   .toggle-text {
     font-size: 1rem;
     font-weight: 600;
-    color: #333;
+    color: #000;
   }
 
   .toggle-hint {
     margin: 0.75rem 0 0 0;
     padding-left: 2rem;
     font-size: 0.875rem;
-    color: #666;
+    color: #525252;
     font-style: italic;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .btn-cancel-bid,
   .btn-confirm-bid {
     flex: 1;
     padding: 1rem 2rem;
-    border-radius: 8px;
     text-decoration: none;
     font-weight: 600;
     font-size: 1.1rem;
     text-align: center;
-    transition: transform 0.2s, box-shadow 0.2s;
-    border: none;
+    transition: background 0.2s, color 0.2s;
+    border: 2px solid #000;
     cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .btn-cancel-bid {
-    background-color: #e5e7eb;
-    color: #333;
+    background: transparent;
+    color: #000;
   }
 
   .btn-cancel-bid:hover {
-    background-color: #d1d5db;
+    background: #000;
+    color: #fff;
   }
 
   .btn-confirm-bid {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
+    background: #000;
+    color: #fff;
   }
 
   .btn-confirm-bid:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   /* Edit Modal Styles */
@@ -3299,8 +3260,11 @@
     display: block;
     margin-bottom: 0.5rem;
     font-weight: 600;
-    color: #333;
+    color: #000;
     font-size: 0.95rem;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .form-group input,
@@ -3308,8 +3272,7 @@
   .form-group select {
     width: 100%;
     padding: 0.75rem;
-    border: 2px solid #e5e7eb;
-    border-radius: 6px;
+    border: 1px solid #000;
     font-size: 1rem;
     font-family: inherit;
     transition: border-color 0.2s;
@@ -3319,8 +3282,8 @@
   .form-group textarea:focus,
   .form-group select:focus {
     outline: none;
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+    border: 4px solid #000;
+    box-shadow: none;
   }
 
   .form-group input:disabled,
@@ -3356,7 +3319,7 @@
   .field-hint {
     margin: 0.5rem 0 0 0;
     font-size: 0.875rem;
-    color: #666;
+    color: #525252;
     font-style: italic;
   }
 
@@ -3364,32 +3327,35 @@
   .btn-save-edit {
     flex: 1;
     padding: 1rem 2rem;
-    border-radius: 8px;
     font-weight: 600;
     font-size: 1.1rem;
     text-align: center;
-    transition: transform 0.2s, box-shadow 0.2s;
-    border: none;
+    transition: background 0.2s, color 0.2s;
+    border: 2px solid #000;
     cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .btn-cancel-edit {
-    background-color: #e5e7eb;
-    color: #333;
+    background: transparent;
+    color: #000;
   }
 
   .btn-cancel-edit:hover:not(:disabled) {
-    background-color: #d1d5db;
+    background: #000;
+    color: #fff;
   }
 
   .btn-save-edit {
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
+    background: #000;
+    color: #fff;
   }
 
   .btn-save-edit:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .btn-cancel-edit:disabled,
@@ -3401,8 +3367,8 @@
 
   /* Owner Section Styles */
   .owner-section {
-    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-    border: 2px solid #f59e0b;
+    background: #F5F5F5;
+    border: 4px solid #000;
   }
 
   .highest-bid-info {
@@ -3413,22 +3379,25 @@
 
   .info-text {
     font-size: 0.95rem;
-    color: #92400e;
+    color: #525252;
     font-weight: 600;
     margin: 0 0 0.5rem 0;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .bid-amount-large {
     font-size: 2.5rem;
     font-weight: 900;
-    color: #f59e0b;
+    color: #000;
     margin: 0.5rem 0;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    font-family: 'Playfair Display', serif;
   }
 
   .bidder-info {
     font-size: 1rem;
-    color: #92400e;
+    color: #525252;
     margin: 0.5rem 0 0 0;
   }
 
@@ -3437,58 +3406,60 @@
     padding: 1.25rem;
     font-size: 1.2rem;
     font-weight: 700;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
-    border: none;
-    border-radius: 8px;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.2s, color 0.2s;
     margin-top: 1rem;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .accept-bid-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   /* Accept Bid Modal Styles */
   .accept-confirmation {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    background: #000;
   }
 
   .warning-message {
-    background-color: #fef3c7;
-    border: 2px solid #f59e0b;
-    border-radius: 8px;
+    background: #F5F5F5;
+    border: 4px solid #000;
     padding: 1rem;
     margin-top: 1.5rem;
-    color: #92400e;
+    color: #000;
     font-weight: 600;
   }
 
   .btn-accept-bid {
     flex: 1;
     padding: 1rem 2rem;
-    border-radius: 8px;
     font-weight: 600;
     font-size: 1.1rem;
     text-align: center;
-    transition: transform 0.2s, box-shadow 0.2s;
-    border: none;
+    transition: background 0.2s, color 0.2s;
+    border: 2px solid #000;
     cursor: pointer;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
+    background: #000;
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .btn-accept-bid:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .btn-accept-bid:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-    transform: none;
   }
 
   /* Duration Selector Styles - Tabs */
@@ -3496,7 +3467,7 @@
     display: flex;
     gap: 0.5rem;
     margin-top: 1rem;
-    border-bottom: 2px solid #e5e7eb;
+    border-bottom: 2px solid #000;
   }
 
   .tab-btn {
@@ -3504,21 +3475,22 @@
     background-color: transparent;
     border: none;
     border-bottom: 3px solid transparent;
-    color: #666;
+    color: #525252;
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
     margin-bottom: -2px;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .tab-btn:hover:not(:disabled) {
-    color: #dc2626;
+    color: #000;
   }
 
   .tab-btn.active {
-    color: #dc2626;
-    border-bottom-color: #dc2626;
+    color: #000;
+    border-bottom-color: #000;
   }
 
   .tab-btn:disabled {
@@ -3554,21 +3526,19 @@
 
   .duration-btn {
     padding: 0.75rem 1.25rem;
-    background-color: white;
-    border: 2px solid #dc2626;
-    color: #dc2626;
-    border-radius: 6px;
+    background: transparent;
+    border: 2px solid #000;
+    color: #000;
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.2s, color 0.2s;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .duration-btn:hover:not(:disabled) {
-    background-color: #dc2626;
-    color: white;
-    transform: translateY(-2px);
-    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+    background: #000;
+    color: #fff;
   }
 
   .duration-btn:disabled {
@@ -3593,44 +3563,45 @@
     width: 80px;
     padding: 0.625rem;
     font-size: 1rem;
-    border: 2px solid #e5e7eb;
-    border-radius: 6px;
+    border: 1px solid #000;
     font-family: inherit;
   }
 
   .duration-input:focus {
     outline: none;
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+    border: 4px solid #000;
+    box-shadow: none;
   }
 
   .duration-unit {
     font-size: 0.875rem;
-    color: #666;
+    color: #525252;
     font-weight: 500;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .apply-duration-btn {
     padding: 0.625rem 1.5rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border: none;
-    border-radius: 6px;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.2s, color 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .apply-duration-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .apply-duration-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-    transform: none;
   }
 
   /* Success Toast Styles */
@@ -3639,9 +3610,8 @@
     top: 1.5rem;
     right: 1.5rem;
     z-index: 10000;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    border-radius: 16px;
-    box-shadow: 0 10px 40px rgba(16, 185, 129, 0.4), 0 4px 12px rgba(0, 0, 0, 0.15);
+    background: #000;
+    border: 4px solid #000;
     overflow: hidden;
     animation: toastSlideIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     min-width: 320px;
@@ -3709,26 +3679,13 @@
   .toast-icon {
     width: 44px;
     height: 44px;
-    background: rgba(255, 255, 255, 0.25);
-    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: white;
-    animation: iconPop 0.5s ease-out 0.2s both;
-  }
-
-  @keyframes iconPop {
-    0% {
-      transform: scale(0);
-    }
-    50% {
-      transform: scale(1.2);
-    }
-    100% {
-      transform: scale(1);
-    }
+    color: #fff;
+    border: 2px solid rgba(255, 255, 255, 0.3);
   }
 
   .toast-text {
@@ -3741,8 +3698,10 @@
   .toast-title {
     font-weight: 700;
     font-size: 1rem;
-    color: white;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .toast-subtitle {
@@ -3751,23 +3710,22 @@
   }
 
   .toast-close {
-    background: rgba(255, 255, 255, 0.2);
-    border: none;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.3);
     width: 28px;
     height: 28px;
-    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    color: white;
-    transition: all 0.2s;
+    color: #fff;
+    transition: background 0.2s, color 0.2s;
     flex-shrink: 0;
   }
 
   .toast-close:hover {
-    background: rgba(255, 255, 255, 0.35);
-    transform: scale(1.1);
+    background: #fff;
+    color: #000;
   }
 
   .toast-progress {
@@ -3819,33 +3777,35 @@
     align-items: center;
     gap: 0.375rem;
     padding: 0.375rem 0.625rem;
-    border-radius: 12px;
     font-size: 0.75rem;
     font-weight: 700;
     transition: all 0.3s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
-  /* Connected state - Green (always active with polling) */
+  /* Connected state */
   .live-indicator.connected {
-    background: rgba(16, 185, 129, 0.1);
-    border: 1px solid rgba(16, 185, 129, 0.3);
-    color: #059669;
+    background: #F5F5F5;
+    border: 1px solid #000;
+    color: #000;
   }
 
   .live-indicator.connected .live-dot {
-    background: #10b981;
+    background: #000;
     animation: pulse-dot 2s ease-in-out infinite;
   }
 
-  /* Updating state - Blue (when actively fetching data) */
+  /* Updating state */
   .live-indicator.updating {
-    background: rgba(59, 130, 246, 0.1);
-    border-color: rgba(59, 130, 246, 0.3);
-    color: #2563eb;
+    background: #000;
+    border-color: #000;
+    color: #fff;
   }
 
   .live-indicator.updating .live-dot {
-    background: #3b82f6;
+    background: #fff;
     animation: pulse-dot 0.5s ease-in-out infinite;
   }
 
@@ -3918,7 +3878,6 @@
     }
     25% {
       transform: scale(1.3);
-      color: #10b981;
     }
     50% {
       transform: scale(0.95);
@@ -3938,13 +3897,10 @@
 
   @keyframes labelPulse {
     0%, 100% {
-      background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
       transform: scale(1);
     }
     50% {
-      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
       transform: scale(1.05);
-      box-shadow: 0 6px 20px rgba(16, 185, 129, 0.6);
     }
   }
 
@@ -3964,21 +3920,21 @@
     position: absolute;
     top: 8px;
     right: 8px;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
+    background: #000;
+    color: #fff;
     padding: 0.25rem 0.625rem;
-    border-radius: 12px;
     font-size: 0.7rem;
     font-weight: 800;
     letter-spacing: 0.05em;
-    animation: newBadgePulse 1s ease-in-out infinite;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
     z-index: 10;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    border: 2px solid #000;
   }
 
   @keyframes newBidHighlight {
     0% {
-      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      background: #000;
       transform: translateX(-100%) scale(0.95);
       opacity: 0;
     }
@@ -3987,28 +3943,17 @@
       opacity: 1;
     }
     30% {
-      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-      box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4);
+      background: #000;
     }
     50% {
-      background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+      background: #F5F5F5;
     }
     75% {
-      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      background: #F5F5F5;
     }
     100% {
-      background: white;
+      background: #fff;
       transform: translateX(0) scale(1);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-  }
-
-  @keyframes newBadgePulse {
-    0%, 100% {
-      transform: scale(1);
-    }
-    50% {
-      transform: scale(1.1);
     }
   }
 
@@ -4041,19 +3986,21 @@
     align-items: center;
     gap: 0.5rem;
     padding: 1rem 2rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border-radius: 8px;
+    background: #000;
+    color: #fff;
     font-weight: 600;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
-    border: none;
+    transition: background 0.2s, color 0.2s;
+    border: 2px solid #000;
     font-size: 1rem;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .image-upload-btn:hover:not(.disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .image-upload-btn.disabled {
@@ -4074,10 +4021,9 @@
   .image-preview-item {
     position: relative;
     aspect-ratio: 1;
-    border-radius: 8px;
     overflow: hidden;
-    border: 2px solid #e5e7eb;
-    background: #f9fafb;
+    border: 2px solid #000;
+    background: #F5F5F5;
   }
 
   .image-preview-item img {
@@ -4092,24 +4038,24 @@
     right: 0.5rem;
     width: 32px;
     height: 32px;
-    background: rgba(220, 38, 38, 0.9);
-    color: white;
-    border: none;
-    border-radius: 50%;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
     font-size: 1.25rem;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    transition: background 0.2s, color 0.2s;
     font-weight: bold;
     line-height: 1;
     z-index: 2;
+    text-decoration: underline;
   }
 
   .remove-image-btn:hover:not(:disabled) {
-    background: #991b1b;
-    transform: scale(1.1);
+    background: #fff;
+    color: #000;
   }
 
   .remove-image-btn:disabled {
@@ -4133,13 +4079,13 @@
     position: absolute;
     top: 0.5rem;
     left: 0.5rem;
-    background: rgba(16, 185, 129, 0.9);
-    color: white;
+    background: #000;
+    color: #fff;
     padding: 0.25rem 0.5rem;
-    border-radius: 4px;
     font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   @media (max-width: 768px) {

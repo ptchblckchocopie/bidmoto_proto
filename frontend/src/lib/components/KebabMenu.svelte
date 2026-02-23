@@ -1,16 +1,19 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  let {
+    items = [],
+    onselect
+  }: {
+    items?: Array<{
+      label: string;
+      action: string;
+      show?: boolean;
+      variant?: 'default' | 'danger';
+      icon?: string;
+    }>;
+    onselect?: (detail: { action: string }) => void;
+  } = $props();
 
-  export let items: Array<{
-    label: string;
-    action: string;
-    show?: boolean;
-    variant?: 'default' | 'danger';
-    icon?: string;
-  }> = [];
-
-  let isOpen = false;
-  const dispatch = createEventDispatcher();
+  let isOpen = $state(false);
 
   function toggle(event: MouseEvent) {
     event.stopPropagation();
@@ -26,7 +29,7 @@
 
   function handleItemClick(action: string) {
     isOpen = false;
-    dispatch('select', { action });
+    onselect?.({ action });
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -35,15 +38,15 @@
     }
   }
 
-  $: visibleItems = items.filter(item => item.show !== false);
+  let visibleItems = $derived(items.filter(item => item.show !== false));
 </script>
 
-<svelte:window on:click={handleClickOutside} on:keydown={handleKeydown} />
+<svelte:window onclick={handleClickOutside} onkeydown={handleKeydown} />
 
 <div class="kebab-menu-container">
   <button
     class="kebab-btn"
-    on:click={toggle}
+    onclick={toggle}
     aria-label="More options"
     aria-expanded={isOpen}
   >
@@ -60,7 +63,7 @@
         <button
           class="menu-item"
           class:danger={item.variant === 'danger'}
-          on:click={() => handleItemClick(item.action)}
+          onclick={() => handleItemClick(item.action)}
         >
           {#if item.icon}
             <span class="item-icon">{item.icon}</span>
@@ -87,20 +90,20 @@
     padding: 0;
     background: transparent;
     border: none;
-    border-radius: 6px;
     cursor: pointer;
     color: #6b7280;
     transition: all 0.2s;
   }
 
   .kebab-btn:hover {
-    background: #f3f4f6;
-    color: #374151;
+    background: #000;
+    color: #fff;
   }
 
   .kebab-btn:focus {
     outline: none;
-    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    box-shadow: none;
+    border: 2px solid #000;
   }
 
   .dropdown-menu {
@@ -110,9 +113,7 @@
     margin-top: 4px;
     min-width: 160px;
     background: white;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    border: 1px solid #e5e7eb;
+    border: 2px solid #000;
     padding: 4px;
     z-index: 100;
     animation: fadeIn 0.15s ease-out;
@@ -137,7 +138,6 @@
     padding: 10px 12px;
     background: transparent;
     border: none;
-    border-radius: 6px;
     cursor: pointer;
     text-align: left;
     font-size: 14px;
@@ -146,15 +146,18 @@
   }
 
   .menu-item:hover {
-    background: #f3f4f6;
+    background: #000;
+    color: #fff;
   }
 
   .menu-item.danger {
-    color: #dc2626;
+    color: #000;
+    text-decoration: underline;
   }
 
   .menu-item.danger:hover {
-    background: #fef2f2;
+    background: #000;
+    color: #fff;
   }
 
   .item-icon {

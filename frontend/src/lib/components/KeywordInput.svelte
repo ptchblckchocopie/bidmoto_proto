@@ -1,24 +1,27 @@
 <script lang="ts">
-  export let keywords: string[] = [];
-  export let disabled: boolean = false;
-  export let placeholder: string = "Type keywords and press comma...";
+  let {
+    keywords = $bindable([]),
+    disabled = false,
+    placeholder = "Type keywords and press comma..."
+  }: {
+    keywords?: string[];
+    disabled?: boolean;
+    placeholder?: string;
+  } = $props();
 
-  let inputValue = '';
+  let inputValue = $state('');
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === ',' || e.key === 'Enter') {
       e.preventDefault();
       addKeyword();
     } else if (e.key === 'Backspace' && inputValue === '' && keywords.length > 0) {
-      // Remove last keyword when backspace is pressed on empty input
       removeKeyword(keywords.length - 1);
     }
   }
 
   function addKeyword() {
     const trimmedValue = inputValue.trim();
-
-    // Remove trailing comma if present
     const cleanValue = trimmedValue.replace(/,+$/, '').trim();
 
     if (cleanValue && !keywords.includes(cleanValue)) {
@@ -34,7 +37,6 @@
   }
 
   function handleBlur() {
-    // Add keyword on blur if there's text in the input
     if (inputValue.trim()) {
       addKeyword();
     }
@@ -49,7 +51,7 @@
         <button
           type="button"
           class="remove-btn"
-          on:click={() => removeKeyword(index)}
+          onclick={() => removeKeyword(index)}
           disabled={disabled}
           aria-label="Remove keyword"
         >
@@ -60,8 +62,8 @@
     <input
       type="text"
       bind:value={inputValue}
-      on:keydown={handleKeydown}
-      on:blur={handleBlur}
+      onkeydown={handleKeydown}
+      onblur={handleBlur}
       {placeholder}
       {disabled}
       class="keyword-input"
@@ -81,16 +83,17 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    border: 1px solid #000;
     background-color: white;
     min-height: 44px;
     transition: border-color 0.2s, box-shadow 0.2s;
   }
 
   .keyword-pills-wrapper:focus-within {
-    border-color: #0066cc;
-    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+    border-color: #000;
+    border-width: 4px;
+    box-shadow: none;
+    padding: calc(0.5rem - 3px);
   }
 
   .keyword-pills-wrapper.disabled {
@@ -103,13 +106,11 @@
     align-items: center;
     gap: 0.375rem;
     padding: 0.375rem 0.625rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border-radius: 16px;
+    background: #000;
+    color: #fff;
     font-size: 0.875rem;
     font-weight: 500;
     animation: slideIn 0.2s ease-out;
-    box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
   }
 
   @keyframes slideIn {
@@ -132,7 +133,6 @@
     color: white;
     width: 18px;
     height: 18px;
-    border-radius: 50%;
     cursor: pointer;
     font-size: 1.25rem;
     line-height: 1;

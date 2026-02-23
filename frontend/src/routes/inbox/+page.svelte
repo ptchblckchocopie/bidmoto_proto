@@ -1,7 +1,6 @@
 <script lang="ts">
-  export let params: any = undefined; // SvelteKit passes this automatically
   import { onMount, onDestroy, tick } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { authStore } from '$lib/stores/auth';
   import { unreadCountStore } from '$lib/stores/inbox';
   import { fetchConversations, fetchProductMessages, fetchMessageById, fetchProduct, fetchProductBids, sendMessage, markMessageAsRead, setTypingStatus, fetchTransactionForProduct, fetchMyRatingForTransaction, createRating, addRatingFollowUp, createVoidRequest, respondToVoidRequest, submitSellerChoice, respondToSecondBidderOffer, getVoidRequestsForTransaction, type VoidRequest } from '$lib/api';
@@ -199,73 +198,73 @@
     }
   }
 
-  let conversations: { product: Product; lastMessage: Message; unreadCount: number }[] = [];
-  let selectedProduct: Product | null = null;
-  let messages: Message[] = [];
-  let newMessage = '';
-  let loading = true;
-  let loadingConversation = false;
-  let sendingMessage = false;
-  let error = '';
-  let pollingInterval: ReturnType<typeof setInterval> | null = null;
-  let conversationListPollingInterval: ReturnType<typeof setInterval> | null = null;
-  let lastMessageTime: string | null = null;
-  let chatInputElement: HTMLInputElement;
-  let typingTimeout: ReturnType<typeof setTimeout> | null = null;
-  let productSseUnsubscribe: (() => void) | null = null;
-  let currentProductSseId: string | null = null;
-  let otherUserTyping = false;
-  let iAmTyping = false;
-  let activeTab: 'products' | 'purchases' = 'products';
-  let chatMessagesElement: HTMLElement | null = null;
-  let shouldAutoScroll = true;
-  let loadingOlderMessages = false;
-  let hasMoreMessages = true;
+  let conversations: { product: Product; lastMessage: Message; unreadCount: number }[] = $state([]);
+  let selectedProduct: Product | null = $state(null);
+  let messages: Message[] = $state([]);
+  let newMessage = $state('');
+  let loading = $state(true);
+  let loadingConversation = $state(false);
+  let sendingMessage = $state(false);
+  let error = $state('');
+  let pollingInterval: ReturnType<typeof setInterval> | null = $state(null);
+  let conversationListPollingInterval: ReturnType<typeof setInterval> | null = $state(null);
+  let lastMessageTime: string | null = $state(null);
+  let chatInputElement: HTMLInputElement = $state(undefined as any);
+  let typingTimeout: ReturnType<typeof setTimeout> | null = $state(null);
+  let productSseUnsubscribe: (() => void) | null = $state(null);
+  let currentProductSseId: string | null = $state(null);
+  let otherUserTyping = $state(false);
+  let iAmTyping = $state(false);
+  let activeTab: 'products' | 'purchases' = $state('products');
+  let chatMessagesElement: HTMLElement | null = $state(null);
+  let shouldAutoScroll = $state(true);
+  let loadingOlderMessages = $state(false);
+  let hasMoreMessages = $state(true);
   const MESSAGE_PAGE_SIZE = 10;
-  let canChat = true;
-  let chatBlockedReason = '';
-  let newMessageIds: Set<string> = new Set();
-  let conversationUpdateDebounce: ReturnType<typeof setTimeout> | null = null;
-  let sseConnected = false;
-  let sseStateUnsubscribe: (() => void) | null = null;
+  let canChat = $state(true);
+  let chatBlockedReason = $state('');
+  let newMessageIds: Set<string> = $state(new Set());
+  let conversationUpdateDebounce: ReturnType<typeof setTimeout> | null = $state(null);
+  let sseConnected = $state(false);
+  let sseStateUnsubscribe: (() => void) | null = $state(null);
 
   // Rating state
-  let transaction: Transaction | null = null;
-  let myRating: Rating | null = null;
-  let otherPartyRating: Rating | null = null;
-  let showRatingModal = false;
-  let ratingValue = 0;
-  let ratingComment = '';
-  let submittingRating = false;
-  let ratingError = '';
-  let buyerName: string | null = null;
-  let sellerName: string | null = null;
+  let transaction: Transaction | null = $state(null);
+  let myRating: Rating | null = $state(null);
+  let otherPartyRating: Rating | null = $state(null);
+  let showRatingModal = $state(false);
+  let ratingValue = $state(0);
+  let ratingComment = $state('');
+  let submittingRating = $state(false);
+  let ratingError = $state('');
+  let buyerName: string | null = $state(null);
+  let sellerName: string | null = $state(null);
 
   // Void request state
-  let voidRequest: VoidRequest | null = null;
-  let showVoidModal = false;
-  let showVoidApprovalModal = false;
-  let showSellerChoiceModal = false;
-  let showSecondBidderOfferModal = false;
-  let voidReason = '';
-  let voidRejectionReason = '';
-  let submittingVoid = false;
-  let voidError = '';
-  let pendingVoidRequest: VoidRequest | null = null;
+  let voidRequest: VoidRequest | null = $state(null);
+  let showVoidModal = $state(false);
+  let showVoidApprovalModal = $state(false);
+  let showSellerChoiceModal = $state(false);
+  let showSecondBidderOfferModal = $state(false);
+  let voidReason = $state('');
+  let voidRejectionReason = $state('');
+  let submittingVoid = $state(false);
+  let voidError = $state('');
+  let pendingVoidRequest: VoidRequest | null = $state(null);
 
   // Get product ID from query params if navigated from purchases page
-  $: productId = $page.url.searchParams.get('product');
+  let productId = $derived(page.url.searchParams.get('product'));
 
   // Filter and sort conversations
-  $: myProductsConversations = conversations
+  let myProductsConversations = $derived(conversations
     .filter(conv => conv.product.seller?.id === $authStore.user?.id)
-    .sort((a, b) => new Date(b.lastMessage.createdAt).getTime() - new Date(a.lastMessage.createdAt).getTime());
+    .sort((a, b) => new Date(b.lastMessage.createdAt).getTime() - new Date(a.lastMessage.createdAt).getTime()));
 
-  $: myPurchasesConversations = conversations
+  let myPurchasesConversations = $derived(conversations
     .filter(conv => conv.product.seller?.id !== $authStore.user?.id)
-    .sort((a, b) => new Date(b.lastMessage.createdAt).getTime() - new Date(a.lastMessage.createdAt).getTime());
+    .sort((a, b) => new Date(b.lastMessage.createdAt).getTime() - new Date(a.lastMessage.createdAt).getTime()));
 
-  $: displayedConversations = activeTab === 'products' ? myProductsConversations : myPurchasesConversations;
+  let displayedConversations = $derived(activeTab === 'products' ? myProductsConversations : myPurchasesConversations);
 
   // Currency symbols
   const currencySymbols: Record<string, string> = {
@@ -405,7 +404,7 @@
     }
 
     // For buyers, check product status
-    if (product.status === 'active') {
+    if (product.status === 'available') {
       return {
         allowed: false,
         reason: 'The bidding is still ongoing and you can only chat if you won the bid.',
@@ -927,7 +926,7 @@
       if (event.type === 'typing') {
         const typingEvent = event as TypingEvent;
         // Only update if it's from another user
-        if (typingEvent.userId !== $authStore.user?.id) {
+        if (String(typingEvent.userId) !== String($authStore.user?.id)) {
           // Clear any existing timeout
           if (typingClearTimeout) {
             clearTimeout(typingClearTimeout);
@@ -1042,129 +1041,138 @@
     }
   }
 
-  onMount(async () => {
-    if (!$authStore.isAuthenticated) {
-      goto('/login?redirect=/inbox');
-      return;
-    }
+  onMount(() => {
+    let cleanupVisibility: (() => void) | undefined;
 
-    await loadConversations();
+    (async () => {
+      if (!$authStore.isAuthenticated) {
+        goto('/login?redirect=/inbox');
+        return;
+      }
 
-    // Connect to SSE for real-time message notifications
-    if ($authStore.user?.id) {
-      const sseClient = getUserSSE(String($authStore.user.id));
-      sseClient.connect();
+      await loadConversations();
 
-      // Subscribe to SSE connection state to enable/disable polling
-      sseStateUnsubscribe = sseClient.state.subscribe((state) => {
-        const wasConnected = sseConnected;
-        sseConnected = state === 'connected';
+      // Connect to SSE for real-time message notifications
+      if ($authStore.user?.id) {
+        const sseClient = getUserSSE(String($authStore.user.id));
+        sseClient.connect();
 
-        if (sseConnected && !wasConnected) {
-          // SSE just connected - stop polling
-          stopPolling();
-        } else if (!sseConnected && wasConnected && selectedProduct) {
-          // SSE just disconnected - start polling if we have a selected conversation
-          startPolling();
-        }
-      });
+        // Subscribe to SSE connection state to enable/disable polling
+        sseStateUnsubscribe = sseClient.state.subscribe((state) => {
+          const wasConnected = sseConnected;
+          sseConnected = state === 'connected';
 
-      // Subscribe to message events
-      const unsubscribe = sseClient.subscribe(async (event: SSEEvent) => {
-        if (event.type === 'new_message') {
-          const msgEvent = event as SSEMessageEvent;
+          if (sseConnected && !wasConnected) {
+            // SSE just connected - stop polling
+            stopPolling();
+          } else if (!sseConnected && wasConnected && selectedProduct) {
+            // SSE just disconnected - start polling if we have a selected conversation
+            startPolling();
+          }
+        });
 
-          // If this message is for the currently selected product, add it dynamically
-          if (selectedProduct && String(msgEvent.productId) === String(selectedProduct.id)) {
-            // Use message data from SSE event directly (no extra HTTP request needed)
-            let newMessage: Message | null = null;
+        // Subscribe to message events
+        const unsubscribe = sseClient.subscribe(async (event: SSEEvent) => {
+          if (event.type === 'new_message') {
+            const msgEvent = event as SSEMessageEvent;
 
-            if (msgEvent.message) {
-              // Use the full message data from the SSE event
-              newMessage = msgEvent.message as unknown as Message;
-            } else {
-              // Fallback: fetch the message if not included in event
-              newMessage = await fetchMessageById(msgEvent.messageId);
-            }
+            // If this message is for the currently selected product, add it dynamically
+            if (selectedProduct && String(msgEvent.productId) === String(selectedProduct.id)) {
+              // Use message data from SSE event directly (no extra HTTP request needed)
+              let newMessage: Message | null = null;
 
-            if (newMessage) {
-              // Check if message already exists to avoid duplicates
-              const messageExists = messages.some(m => m.id === newMessage!.id);
+              if (msgEvent.message) {
+                // Use the full message data from the SSE event
+                newMessage = msgEvent.message as unknown as Message;
+              } else {
+                // Fallback: fetch the message if not included in event
+                newMessage = await fetchMessageById(msgEvent.messageId);
+              }
 
-              if (!messageExists) {
-                // Add to new message IDs for animation
-                newMessageIds = new Set([...newMessageIds, newMessage.id]);
+              if (newMessage) {
+                // Check if message already exists to avoid duplicates
+                const messageExists = messages.some(m => m.id === newMessage!.id);
 
-                // Add the new message to the list
-                messages = [...messages, newMessage];
-                lastMessageTime = newMessage.createdAt;
+                if (!messageExists) {
+                  // Add to new message IDs for animation
+                  newMessageIds = new Set([...newMessageIds, newMessage.id]);
 
-                // Mark as read if it's for current user
-                const receiverId = typeof newMessage.receiver === 'object' ? newMessage.receiver.id : newMessage.receiver;
-                if (receiverId === $authStore.user?.id && !newMessage.read) {
-                  markMessageAsRead(newMessage.id); // Don't await - fire and forget
-                  unreadCountStore.decrement(1); // Update navbar badge immediately
+                  // Add the new message to the list
+                  messages = [...messages, newMessage];
+                  lastMessageTime = newMessage.createdAt;
+
+                  // Mark as read if it's for current user
+                  const receiverId = typeof newMessage.receiver === 'object' ? newMessage.receiver.id : newMessage.receiver;
+                  if (receiverId === $authStore.user?.id && !newMessage.read) {
+                    markMessageAsRead(newMessage.id); // Don't await - fire and forget
+                    unreadCountStore.decrement(1); // Update navbar badge immediately
+                  }
+
+                  // Scroll to bottom for new messages
+                  shouldAutoScroll = true;
+                  await tick();
+                  scrollToBottom(true);
+
+                  // Clear animation after delay
+                  setTimeout(() => {
+                    newMessageIds = new Set([...newMessageIds].filter(id => id !== newMessage!.id));
+                  }, 500);
                 }
-
-                // Scroll to bottom for new messages
-                shouldAutoScroll = true;
-                await tick();
-                scrollToBottom(true);
-
-                // Clear animation after delay
-                setTimeout(() => {
-                  newMessageIds = new Set([...newMessageIds].filter(id => id !== newMessage!.id));
-                }, 500);
               }
             }
+
+            // Update conversations list in background (without re-selecting) - debounced
+            if (conversationUpdateDebounce) {
+              clearTimeout(conversationUpdateDebounce);
+            }
+            conversationUpdateDebounce = setTimeout(() => {
+              pollConversationList();
+            }, 500); // Wait 500ms before updating to batch rapid messages
           }
+        });
 
-          // Update conversations list in background (without re-selecting) - debounced
-          if (conversationUpdateDebounce) {
-            clearTimeout(conversationUpdateDebounce);
-          }
-          conversationUpdateDebounce = setTimeout(() => {
-            pollConversationList();
-          }, 500); // Wait 500ms before updating to batch rapid messages
-        }
-      });
-
-      // Store unsubscribe for cleanup
-      (window as any).__sseUnsubscribe = unsubscribe;
-    }
-
-    // Handle visibility change - stop polling when tab is not visible
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Tab is hidden, stop all polling to save resources
-        stopPolling();
-        stopConversationListPolling();
-        // Note: SSE stays connected for typing, no need to disconnect
-      } else {
-        // Tab is visible again
-        if (selectedProduct) {
-          // Only start polling if SSE is not connected (startPolling checks this)
-          startPolling();
-          // Re-subscribe to product SSE for typing
-          subscribeToProductSSE(String(selectedProduct.id));
-        }
-        // Always restart conversation list polling (this is less frequent)
-        startConversationListPolling();
+        // Store unsubscribe for cleanup
+        (window as any).__sseUnsubscribe = unsubscribe;
       }
-    };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+      // Handle visibility change - stop polling when tab is not visible
+      const handleVisibilityChange = () => {
+        if (document.hidden) {
+          // Tab is hidden, stop all polling to save resources
+          stopPolling();
+          stopConversationListPolling();
+          // Note: SSE stays connected for typing, no need to disconnect
+        } else {
+          // Tab is visible again
+          if (selectedProduct) {
+            // Only start polling if SSE is not connected (startPolling checks this)
+            startPolling();
+            // Re-subscribe to product SSE for typing
+            subscribeToProductSSE(String(selectedProduct.id));
+          }
+          // Always restart conversation list polling (this is less frequent)
+          startConversationListPolling();
+        }
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      cleanupVisibility = () => {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
+    })();
 
     // Cleanup visibility listener on destroy
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      cleanupVisibility?.();
     };
   });
 
   // Auto-scroll when typing indicator appears (but not when I'm typing)
-  $: if (otherUserTyping && !iAmTyping && shouldAutoScroll) {
-    setTimeout(scrollToBottom, 50);
-  }
+  $effect(() => {
+    if (otherUserTyping && !iAmTyping && shouldAutoScroll) {
+      setTimeout(scrollToBottom, 50);
+    }
+  });
 
   onDestroy(() => {
     stopPolling();
@@ -1222,7 +1230,7 @@
           <button
             class="tab"
             class:active={activeTab === 'products'}
-            on:click={() => activeTab = 'products'}
+            onclick={() => activeTab = 'products'}
           >
             My Products
             {#if myProductsConversations.length > 0}
@@ -1232,7 +1240,7 @@
           <button
             class="tab"
             class:active={activeTab === 'purchases'}
-            on:click={() => activeTab = 'purchases'}
+            onclick={() => activeTab = 'purchases'}
           >
             My Purchases
             {#if myPurchasesConversations.length > 0}
@@ -1254,7 +1262,7 @@
             class="conversation-item"
             class:active={selectedProduct?.id === conv.product.id}
             class:loading={loadingConversation && selectedProduct?.id === conv.product.id}
-            on:click={() => selectConversation(conv.product)}
+            onclick={() => selectConversation(conv.product)}
             disabled={loadingConversation}
           >
             <div class="conversation-image">
@@ -1304,7 +1312,7 @@
       <main class="chat-area" class:show-on-mobile={selectedProduct}>
         {#if selectedProduct}
           <div class="chat-header">
-            <button class="back-btn" on:click={handleBackToList} disabled={loadingConversation}>
+            <button class="back-btn" onclick={handleBackToList} disabled={loadingConversation}>
               ← Back
             </button>
             <div class="product-summary">
@@ -1336,11 +1344,11 @@
                 { label: 'View Product', action: 'view_product', show: true, icon: '🔗' },
                 { label: 'Void Bid', action: 'void_bid', show: selectedProduct.status === 'sold' && !!transaction && (transaction.status === 'pending' || transaction.status === 'in_progress'), variant: 'danger', icon: '❌' }
               ]}
-              on:select={(e) => handleMenuAction(e.detail.action)}
+              onselect={(detail) => handleMenuAction(detail.action)}
             />
           </div>
 
-          <div class="chat-messages" bind:this={chatMessagesElement} on:scroll={handleScroll}>
+          <div class="chat-messages" bind:this={chatMessagesElement} onscroll={handleScroll}>
             {#if loadingConversation}
               <div class="loading-conversation">
                 <div class="loading-spinner"></div>
@@ -1405,7 +1413,7 @@
                         rating={ratingValue}
                         interactive={true}
                         size="medium"
-                        on:change={(e) => ratingValue = e.detail.rating}
+                        onchange={(detail) => ratingValue = detail.rating}
                       />
                       {#if ratingValue > 0}
                         <span class="rating-value-text">{ratingValue}/5</span>
@@ -1421,7 +1429,7 @@
                         />
                         <button
                           class="inline-submit-btn"
-                          on:click={submitRating}
+                          onclick={submitRating}
                           disabled={submittingRating}
                         >
                           {submittingRating ? '...' : 'Submit'}
@@ -1469,12 +1477,12 @@
               </a>
             </div>
           {:else}
-            <form class="chat-input-form" on:submit|preventDefault={handleSendMessage}>
+            <form class="chat-input-form" onsubmit={(e) => { e.preventDefault(); handleSendMessage(); }}>
               <input
                 type="text"
                 bind:value={newMessage}
                 bind:this={chatInputElement}
-                on:input={handleTyping}
+                oninput={handleTyping}
                 placeholder="Type your message..."
                 class="chat-input"
                 disabled={sendingMessage}
@@ -1496,9 +1504,9 @@
 
 <!-- Rating Modal -->
 {#if showRatingModal && selectedProduct && transaction}
-  <div class="modal-overlay" on:click={() => showRatingModal = false} on:keydown={(e) => e.key === 'Escape' && (showRatingModal = false)} role="button" tabindex="0">
-    <div class="modal-content" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true">
-      <button class="modal-close" on:click={() => showRatingModal = false}>&times;</button>
+  <div class="modal-overlay" onclick={() => showRatingModal = false} onkeydown={(e) => e.key === 'Escape' && (showRatingModal = false)} role="button" tabindex="0">
+    <div class="modal-content" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+      <button class="modal-close" onclick={() => showRatingModal = false}>&times;</button>
       <h2>Rate Your {$authStore.user?.id === selectedProduct.seller.id ? 'Buyer' : 'Seller'}</h2>
       <p class="modal-subtitle">
         {#if $authStore.user?.id === selectedProduct.seller.id}
@@ -1513,7 +1521,7 @@
           rating={ratingValue}
           interactive={true}
           size="large"
-          on:change={(e) => ratingValue = e.detail.rating}
+          onchange={(detail) => ratingValue = detail.rating}
         />
         <span class="rating-value-display">{ratingValue > 0 ? `${ratingValue}/5` : 'Select rating'}</span>
       </div>
@@ -1533,10 +1541,10 @@
       {/if}
 
       <div class="modal-actions">
-        <button class="btn-cancel" on:click={() => showRatingModal = false}>Cancel</button>
+        <button class="btn-cancel" onclick={() => showRatingModal = false}>Cancel</button>
         <button
           class="btn-submit"
-          on:click={submitRating}
+          onclick={submitRating}
           disabled={submittingRating || ratingValue === 0}
         >
           {submittingRating ? 'Submitting...' : 'Submit Rating'}
@@ -1548,9 +1556,9 @@
 
 <!-- Void Request Modal -->
 {#if showVoidModal}
-  <div class="modal-overlay" on:click={closeVoidModal}>
-    <div class="modal void-modal" on:click|stopPropagation>
-      <button class="modal-close" on:click={closeVoidModal}>&times;</button>
+  <div class="modal-overlay" onclick={closeVoidModal}>
+    <div class="modal void-modal" onclick={(e) => e.stopPropagation()}>
+      <button class="modal-close" onclick={closeVoidModal}>&times;</button>
       <h2>Request Void</h2>
       <p class="void-description">
         You are requesting to void the transaction for <strong>{selectedProduct?.title}</strong>.
@@ -1572,10 +1580,10 @@
       {/if}
 
       <div class="modal-actions">
-        <button class="btn-cancel" on:click={closeVoidModal}>Cancel</button>
+        <button class="btn-cancel" onclick={closeVoidModal}>Cancel</button>
         <button
           class="btn-submit btn-danger"
-          on:click={handleSubmitVoidRequest}
+          onclick={handleSubmitVoidRequest}
           disabled={submittingVoid || !voidReason.trim()}
         >
           {submittingVoid ? 'Submitting...' : 'Submit Void Request'}
@@ -1587,9 +1595,9 @@
 
 <!-- Void Approval Modal -->
 {#if showVoidApprovalModal && pendingVoidRequest}
-  <div class="modal-overlay" on:click={closeVoidApprovalModal}>
-    <div class="modal void-modal" on:click|stopPropagation>
-      <button class="modal-close" on:click={closeVoidApprovalModal}>&times;</button>
+  <div class="modal-overlay" onclick={closeVoidApprovalModal}>
+    <div class="modal void-modal" onclick={(e) => e.stopPropagation()}>
+      <button class="modal-close" onclick={closeVoidApprovalModal}>&times;</button>
       <h2>Void Request</h2>
       <p class="void-description">
         <strong>{typeof pendingVoidRequest.initiator === 'object' ? pendingVoidRequest.initiator.name : 'User'}</strong>
@@ -1616,10 +1624,10 @@
       {/if}
 
       <div class="modal-actions three-buttons">
-        <button class="btn-cancel" on:click={closeVoidApprovalModal}>Cancel</button>
+        <button class="btn-cancel" onclick={closeVoidApprovalModal}>Cancel</button>
         <button
           class="btn-reject"
-          on:click={() => {
+          onclick={() => {
             const group = document.getElementById('rejectionReasonGroup');
             if (group && group.style.display === 'none') {
               group.style.display = 'block';
@@ -1633,7 +1641,7 @@
         </button>
         <button
           class="btn-submit btn-success"
-          on:click={() => handleRespondToVoid('approve')}
+          onclick={() => handleRespondToVoid('approve')}
           disabled={submittingVoid}
         >
           {submittingVoid ? 'Processing...' : 'Approve Void'}
@@ -1645,9 +1653,9 @@
 
 <!-- Seller Choice Modal -->
 {#if showSellerChoiceModal}
-  <div class="modal-overlay" on:click={() => showSellerChoiceModal = false}>
-    <div class="modal void-modal seller-choice-modal" on:click|stopPropagation>
-      <button class="modal-close" on:click={() => showSellerChoiceModal = false}>&times;</button>
+  <div class="modal-overlay" onclick={() => showSellerChoiceModal = false}>
+    <div class="modal void-modal seller-choice-modal" onclick={(e) => e.stopPropagation()}>
+      <button class="modal-close" onclick={() => showSellerChoiceModal = false}>&times;</button>
       <h2>Transaction Voided</h2>
       <p class="void-description">
         The void request for <strong>{selectedProduct?.title}</strong> has been approved.
@@ -1657,7 +1665,7 @@
       <div class="choice-options">
         <button
           class="choice-option"
-          on:click={() => handleSellerChoice('restart_bidding')}
+          onclick={() => handleSellerChoice('restart_bidding')}
           disabled={submittingVoid}
         >
           <div class="choice-icon">🔄</div>
@@ -1669,7 +1677,7 @@
 
         <button
           class="choice-option"
-          on:click={() => handleSellerChoice('offer_second_bidder')}
+          onclick={() => handleSellerChoice('offer_second_bidder')}
           disabled={submittingVoid}
         >
           <div class="choice-icon">🥈</div>
@@ -1689,9 +1697,9 @@
 
 <!-- Second Bidder Offer Modal -->
 {#if showSecondBidderOfferModal && pendingVoidRequest?.secondBidderOffer}
-  <div class="modal-overlay" on:click={() => showSecondBidderOfferModal = false}>
-    <div class="modal void-modal" on:click|stopPropagation>
-      <button class="modal-close" on:click={() => showSecondBidderOfferModal = false}>&times;</button>
+  <div class="modal-overlay" onclick={() => showSecondBidderOfferModal = false}>
+    <div class="modal void-modal" onclick={(e) => e.stopPropagation()}>
+      <button class="modal-close" onclick={() => showSecondBidderOfferModal = false}>&times;</button>
       <h2>Purchase Offer</h2>
       <p class="void-description">
         You have been offered the chance to purchase <strong>{selectedProduct?.title}</strong>
@@ -1715,14 +1723,14 @@
       <div class="modal-actions">
         <button
           class="btn-cancel"
-          on:click={() => handleSecondBidderResponse('decline')}
+          onclick={() => handleSecondBidderResponse('decline')}
           disabled={submittingVoid}
         >
           {submittingVoid ? 'Processing...' : 'Decline'}
         </button>
         <button
           class="btn-submit btn-success"
-          on:click={() => handleSecondBidderResponse('accept')}
+          onclick={() => handleSecondBidderResponse('accept')}
           disabled={submittingVoid}
         >
           {submittingVoid ? 'Processing...' : 'Accept Offer'}
@@ -1742,22 +1750,23 @@
   h1 {
     font-size: 2.5rem;
     margin-bottom: 2rem;
-    color: #333;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .loading {
     text-align: center;
     padding: 3rem;
-    color: #666;
+    color: #525252;
     font-size: 1.2rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   .empty-state {
     text-align: center;
     padding: 4rem 2rem;
-    background-color: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    background-color: #fff;
+    border: 1px solid #000;
   }
 
   .empty-icon {
@@ -1767,30 +1776,35 @@
 
   .empty-state h2 {
     font-size: 1.8rem;
-    color: #333;
+    color: #000;
     margin-bottom: 0.5rem;
+    font-family: 'Playfair Display', serif;
   }
 
   .empty-state p {
-    color: #666;
+    color: #525252;
     font-size: 1.1rem;
     margin-bottom: 2rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   .btn-browse {
     display: inline-block;
     padding: 0.75rem 2rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
+    background: #000;
+    color: #fff;
     text-decoration: none;
-    border-radius: 6px;
+    border: 2px solid #000;
     font-weight: 600;
-    transition: transform 0.2s, box-shadow 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    transition: background 0.2s, color 0.2s;
   }
 
   .btn-browse:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .inbox-container {
@@ -1802,9 +1816,8 @@
   }
 
   .conversations-list {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    background: #fff;
+    border: 1px solid #000;
     overflow-y: auto;
     padding: 1rem;
     display: flex;
@@ -1816,56 +1829,59 @@
     display: flex;
     gap: 0.5rem;
     padding: 0.5rem;
-    border-bottom: 2px solid #f0f0f0;
+    border-bottom: 2px solid #000;
     margin-bottom: 1rem;
   }
 
   .tab {
     flex: 1;
     padding: 0.75rem 1rem;
-    background: white;
-    border: 2px solid #e5e7eb;
-    border-radius: 8px;
+    background: #fff;
+    border: 2px solid #000;
     font-weight: 600;
     font-size: 0.9rem;
-    color: #666;
+    color: #000;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.2s, color 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .tab:hover {
-    background: #f9fafb;
-    border-color: #d1d5db;
+    background: #F5F5F5;
+    border-color: #000;
   }
 
   .tab.active {
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    border-color: #dc2626;
-    color: white;
+    background: #000;
+    border-color: #000;
+    color: #fff;
   }
 
   .tab-badge {
-    background: rgba(255, 255, 255, 0.3);
+    background: #E5E5E5;
     padding: 0.125rem 0.5rem;
-    border-radius: 12px;
     font-size: 0.75rem;
     font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .tab.active .tab-badge {
-    background: rgba(255, 255, 255, 0.9);
-    color: #dc2626;
+    background: #fff;
+    color: #000;
   }
 
   .no-conversations {
     text-align: center;
     padding: 2rem 1rem;
-    color: #999;
+    color: #525252;
     font-size: 0.95rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   .conversation-item {
@@ -1873,23 +1889,23 @@
     display: flex;
     gap: 0.75rem;
     padding: 0.75rem;
-    border: none;
-    background: white;
-    border-radius: 8px;
+    border: 1px solid #E5E5E5;
+    background: #fff;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background 0.2s, color 0.2s;
     margin-bottom: 0.5rem;
     text-align: left;
     position: relative;
   }
 
   .conversation-item:hover {
-    background-color: #f9fafb;
+    background: #F5F5F5;
   }
 
   .conversation-item.active {
-    background-color: #fee;
-    border-left: 4px solid #dc2626;
+    background: #000;
+    color: #fff;
+    border-left: 4px solid #000;
   }
 
   .conversation-item.loading {
@@ -1906,9 +1922,9 @@
     width: 60px;
     height: 60px;
     flex-shrink: 0;
-    border-radius: 6px;
     overflow: hidden;
-    background-color: #f0f0f0;
+    background-color: #F5F5F5;
+    border: 1px solid #E5E5E5;
   }
 
   .conversation-image img {
@@ -1934,57 +1950,85 @@
   .conversation-info h3 {
     font-size: 0.95rem;
     margin: 0 0 0.25rem 0;
-    color: #333;
+    color: #000;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: 'Playfair Display', serif;
+  }
+
+  .conversation-item.active .conversation-info h3 {
+    color: #fff;
   }
 
   .seller-name {
     font-size: 0.8rem;
-    color: #999;
+    color: #525252;
     margin: 0 0 0.35rem 0;
     font-style: italic;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: 'Source Serif 4', serif;
+  }
+
+  .conversation-item.active .seller-name {
+    color: #E5E5E5;
   }
 
   .last-message {
     font-size: 0.85rem;
-    color: #666;
+    color: #525252;
     margin: 0 0 0.25rem 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: 'Source Serif 4', serif;
+  }
+
+  .conversation-item.active .last-message {
+    color: #E5E5E5;
   }
 
   .sender-name {
     font-weight: 600;
-    color: #333;
+    color: #000;
+  }
+
+  .conversation-item.active .sender-name {
+    color: #fff;
   }
 
   .timestamp {
     font-size: 0.75rem;
-    color: #999;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .conversation-item.active .timestamp {
+    color: #E5E5E5;
   }
 
   .unread-badge {
     position: absolute;
     top: 0.75rem;
     right: 0.75rem;
-    background-color: #dc2626;
-    color: white;
-    border-radius: 12px;
+    background-color: #000;
+    color: #fff;
     padding: 0.125rem 0.5rem;
     font-size: 0.75rem;
     font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .conversation-item.active .unread-badge {
+    background-color: #fff;
+    color: #000;
   }
 
   .chat-area {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    background: #fff;
+    border: 1px solid #000;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1992,7 +2036,8 @@
 
   .chat-header {
     padding: 1.25rem;
-    border-bottom: 2px solid #f0f0f0;
+    border-bottom: 4px solid #000;
+    background: #fff;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -2001,48 +2046,59 @@
   .product-summary h3 {
     font-size: 1.25rem;
     margin: 0 0 0.25rem 0;
-    color: #333;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .product-price {
     margin: 0;
     font-size: 0.95rem;
-    color: #666;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .status-badge {
     display: inline-block;
     padding: 0.125rem 0.5rem;
-    border-radius: 4px;
     font-size: 0.75rem;
     font-weight: 700;
     text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.05em;
+    border: 1px solid #000;
   }
 
   .status-active {
-    background-color: #10b981;
-    color: white;
+    background-color: #000;
+    color: #fff;
   }
 
   .status-sold {
-    background-color: #6366f1;
-    color: white;
+    background-color: #000;
+    color: #fff;
   }
 
   .status-ended {
-    background-color: #6b7280;
-    color: white;
+    background-color: #E5E5E5;
+    color: #000;
+  }
+
+  .status-available {
+    background-color: #000;
+    color: #fff;
   }
 
   .view-product-link {
-    color: #dc2626;
-    text-decoration: none;
+    color: #000;
+    text-decoration: underline;
     font-weight: 600;
-    transition: opacity 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    transition: background 0.2s, color 0.2s;
   }
 
   .view-product-link:hover {
-    opacity: 0.7;
+    background: #000;
+    color: #fff;
   }
 
   .chat-messages {
@@ -2065,14 +2121,17 @@
 
   .message-content {
     max-width: 60%;
-    background-color: #f0f0f0;
+    background-color: #fff;
+    color: #000;
+    border: 1px solid #000;
     padding: 0.75rem 1rem;
-    border-radius: 12px;
+    font-family: 'Source Serif 4', serif;
   }
 
   .message.mine .message-content {
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
+    background: #000;
+    color: #fff;
+    border: 1px solid #000;
   }
 
   .message-sender {
@@ -2080,11 +2139,12 @@
     font-size: 0.8rem;
     font-weight: 600;
     margin-bottom: 0.25rem;
-    color: #666;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .message.mine .message-sender {
-    color: rgba(255, 255, 255, 0.9);
+    color: #E5E5E5;
   }
 
   .message-content p {
@@ -2097,6 +2157,7 @@
     font-size: 0.7rem;
     margin-top: 0.25rem;
     opacity: 0.7;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   /* New message float-up animation */
@@ -2117,55 +2178,56 @@
 
   .error-message {
     padding: 0.75rem 1.25rem;
-    background-color: #fee;
-    color: #c33;
+    background-color: #fff;
+    color: #000;
     text-align: center;
-    border-top: 1px solid #fcc;
+    border-top: 4px solid #000;
+    font-family: 'Source Serif 4', serif;
   }
 
   .chat-input-form {
     display: flex;
     gap: 0.75rem;
     padding: 1.25rem;
-    border-top: 2px solid #f0f0f0;
+    border-top: 2px solid #000;
   }
 
   .chat-input {
     flex: 1;
     padding: 0.75rem 1rem;
     font-size: 1rem;
-    border: 2px solid #e5e7eb;
-    border-radius: 8px;
-    font-family: inherit;
+    border: 1px solid #000;
+    font-family: 'Source Serif 4', serif;
   }
 
   .chat-input:focus {
     outline: none;
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+    border: 4px solid #000;
+    box-shadow: none;
   }
 
   .send-btn {
     padding: 0.75rem 2rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border: none;
-    border-radius: 8px;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
     font-weight: 600;
     font-size: 1rem;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.2s, color 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .send-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .send-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-    transform: none;
   }
 
   .no-conversation-selected {
@@ -2173,8 +2235,9 @@
     align-items: center;
     justify-content: center;
     height: 100%;
-    color: #999;
+    color: #525252;
     font-size: 1.1rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   /* Typing Indicator */
@@ -2190,14 +2253,14 @@
     display: flex;
     gap: 0.25rem;
     padding: 0.5rem 0.75rem;
-    background-color: #f0f0f0;
-    border-radius: 12px;
+    background-color: #F5F5F5;
+    border: 1px solid #E5E5E5;
   }
 
   .dot {
     width: 8px;
     height: 8px;
-    background-color: #999;
+    background-color: #000;
     border-radius: 50%;
     animation: typing 1.4s infinite;
   }
@@ -2227,8 +2290,9 @@
 
   .typing-text {
     font-size: 0.85rem;
-    color: #999;
+    color: #525252;
     font-style: italic;
+    font-family: 'Source Serif 4', serif;
   }
 
   /* Loading Older Messages */
@@ -2238,8 +2302,9 @@
     justify-content: center;
     gap: 0.75rem;
     padding: 1rem;
-    color: #666;
+    color: #525252;
     font-size: 0.9rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   /* Loading Conversation */
@@ -2250,16 +2315,17 @@
     justify-content: center;
     gap: 1rem;
     padding: 3rem 1rem;
-    color: #666;
+    color: #525252;
     font-size: 1rem;
     min-height: 200px;
+    font-family: 'Source Serif 4', serif;
   }
 
   .loading-spinner {
     width: 20px;
     height: 20px;
-    border: 3px solid #f0f0f0;
-    border-top-color: #dc2626;
+    border: 3px solid #E5E5E5;
+    border-top-color: #000;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -2280,8 +2346,8 @@
   .chat-blocked-message {
     padding: 2rem;
     text-align: center;
-    background: linear-gradient(135deg, #fee 0%, #fdd 100%);
-    border-top: 2px solid #fcc;
+    background: #F5F5F5;
+    border-top: 4px solid #000;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -2294,45 +2360,51 @@
 
   .blocked-text {
     font-size: 1rem;
-    color: #c33;
+    color: #000;
     margin: 0;
     font-weight: 500;
+    font-family: 'Source Serif 4', serif;
   }
 
   .view-product-btn {
     display: inline-block;
     padding: 0.75rem 2rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
+    background: #000;
+    color: #fff;
     text-decoration: none;
-    border-radius: 8px;
+    border: 2px solid #000;
     font-weight: 600;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.2s, color 0.2s;
     margin-top: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .view-product-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   /* Back button - hidden by default, shown on mobile */
   .back-btn {
     display: none;
     padding: 0.5rem 1rem;
-    background: white;
-    color: #dc2626;
-    border: 2px solid #dc2626;
-    border-radius: 6px;
+    background: #fff;
+    color: #000;
+    border: 2px solid #000;
     font-weight: 600;
     font-size: 0.9rem;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.2s, color 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .back-btn:hover:not(:disabled) {
-    background: #dc2626;
-    color: white;
+    background: #000;
+    color: #fff;
   }
 
   .back-btn:disabled {
@@ -2425,17 +2497,19 @@
   }
 
   .party-label {
-    color: #666;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .party-name {
-    color: #333;
+    color: #000;
     font-weight: 500;
     text-decoration: none;
+    font-family: 'Source Serif 4', serif;
   }
 
   .party-name:hover {
-    color: #dc2626;
+    color: #000;
     text-decoration: underline;
   }
 
@@ -2450,19 +2524,21 @@
   .submit-rating-btn {
     margin-top: 0.75rem;
     padding: 0.5rem 1rem;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
-    border: none;
-    border-radius: 6px;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
     font-weight: 600;
     font-size: 0.85rem;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.2s, color 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .submit-rating-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   /* Rating Submitted */
@@ -2472,24 +2548,26 @@
     gap: 0.5rem;
     margin-top: 0.75rem;
     padding: 0.5rem 0.75rem;
-    background: #f0fdf4;
-    border-radius: 6px;
+    background: #F5F5F5;
+    border: 1px solid #E5E5E5;
     font-size: 0.85rem;
   }
 
   .rating-label {
-    color: #059669;
+    color: #000;
     font-weight: 500;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .rating-comment {
     font-style: italic;
-    color: #666;
+    color: #525252;
     font-size: 0.8rem;
     max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: 'Source Serif 4', serif;
   }
 
   /* Modal Styles */
@@ -2508,13 +2586,12 @@
   }
 
   .modal-content {
-    background: white;
-    border-radius: 12px;
+    background: #fff;
+    border: 4px solid #000;
     padding: 2rem;
     max-width: 450px;
     width: 100%;
     position: relative;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   }
 
   .modal-close {
@@ -2522,34 +2599,35 @@
     top: 1rem;
     right: 1rem;
     background: none;
-    border: none;
+    border: 2px solid #000;
     font-size: 1.5rem;
     cursor: pointer;
-    color: #999;
+    color: #000;
     width: 32px;
     height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
-    transition: background 0.2s;
+    transition: background 0.2s, color 0.2s;
   }
 
   .modal-close:hover {
-    background: #f0f0f0;
-    color: #333;
+    background: #000;
+    color: #fff;
   }
 
   .modal-content h2 {
     margin: 0 0 0.5rem 0;
     font-size: 1.5rem;
-    color: #333;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .modal-subtitle {
-    color: #666;
+    color: #525252;
     margin: 0 0 1.5rem 0;
     font-size: 0.95rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   .rating-selector {
@@ -2562,8 +2640,9 @@
 
   .rating-value-display {
     font-size: 0.9rem;
-    color: #666;
+    color: #525252;
     font-weight: 500;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .comment-input {
@@ -2574,15 +2653,15 @@
     display: block;
     margin-bottom: 0.5rem;
     font-weight: 500;
-    color: #333;
+    color: #000;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .comment-input textarea {
     width: 100%;
     padding: 0.75rem;
-    border: 2px solid #e5e7eb;
-    border-radius: 8px;
-    font-family: inherit;
+    border: 1px solid #000;
+    font-family: 'Source Serif 4', serif;
     font-size: 0.95rem;
     resize: vertical;
     min-height: 80px;
@@ -2590,15 +2669,16 @@
 
   .comment-input textarea:focus {
     outline: none;
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+    border: 4px solid #000;
+    box-shadow: none;
   }
 
   .rating-error {
-    color: #dc2626;
+    color: #000;
     font-size: 0.9rem;
     margin-bottom: 1rem;
     text-align: center;
+    font-family: 'Source Serif 4', serif;
   }
 
   .modal-actions {
@@ -2609,49 +2689,52 @@
 
   .btn-cancel {
     padding: 0.75rem 1.5rem;
-    background: white;
-    color: #666;
-    border: 2px solid #e5e7eb;
-    border-radius: 8px;
+    background: transparent;
+    color: #000;
+    border: 2px solid #000;
     font-weight: 600;
     font-size: 0.95rem;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.2s, color 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .btn-cancel:hover {
-    background: #f9fafb;
-    border-color: #d1d5db;
+    background: #000;
+    color: #fff;
   }
 
   .btn-submit {
     padding: 0.75rem 1.5rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border: none;
-    border-radius: 8px;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
     font-weight: 600;
     font-size: 0.95rem;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.2s, color 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .btn-submit:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .btn-submit:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-    transform: none;
   }
 
   /* Inline Rating Section */
   .inline-rating-section {
-    border-top: 2px solid #f0f0f0;
+    border-top: 2px solid #000;
     padding: 1rem 1.25rem;
-    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    background: #F5F5F5;
   }
 
   .rating-prompt {
@@ -2673,13 +2756,15 @@
   .rating-title {
     font-weight: 600;
     font-size: 1rem;
-    color: #92400e;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .rating-prompt-text {
     margin: 0 0 0.75rem 0;
     font-size: 0.85rem;
-    color: #78350f;
+    color: #525252;
+    font-family: 'Source Serif 4', serif;
   }
 
   .inline-rating-form {
@@ -2697,8 +2782,9 @@
 
   .rating-value-text {
     font-weight: 600;
-    color: #92400e;
+    color: #000;
     font-size: 0.9rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .inline-comment-row {
@@ -2711,35 +2797,36 @@
   .inline-comment-input {
     flex: 1;
     padding: 0.5rem 0.75rem;
-    border: 2px solid #fbbf24;
-    border-radius: 6px;
+    border: 1px solid #000;
     font-size: 0.9rem;
-    font-family: inherit;
-    background: white;
+    font-family: 'Source Serif 4', serif;
+    background: #fff;
   }
 
   .inline-comment-input:focus {
     outline: none;
-    border-color: #f59e0b;
-    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+    border: 4px solid #000;
+    box-shadow: none;
   }
 
   .inline-submit-btn {
     padding: 0.5rem 1rem;
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    color: white;
-    border: none;
-    border-radius: 6px;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
     font-weight: 600;
     font-size: 0.9rem;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.2s, color 0.2s;
     white-space: nowrap;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .inline-submit-btn:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .inline-submit-btn:disabled {
@@ -2748,15 +2835,16 @@
   }
 
   .inline-rating-error {
-    color: #dc2626;
+    color: #000;
     font-size: 0.85rem;
     margin-top: 0.5rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   /* Rating Submitted Inline */
   .rating-submitted-inline {
-    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
-    border-radius: 8px;
+    background: #fff;
+    border: 1px solid #000;
     padding: 0.75rem 1rem;
   }
 
@@ -2766,12 +2854,13 @@
     gap: 0.5rem;
     margin-bottom: 0.5rem;
     font-weight: 600;
-    color: #065f46;
+    color: #000;
     font-size: 0.9rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .rating-check {
-    color: #10b981;
+    color: #000;
     font-size: 1.1rem;
   }
 
@@ -2784,14 +2873,16 @@
 
   .rating-score {
     font-weight: 600;
-    color: #333;
+    color: #000;
     font-size: 0.85rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .rating-comment-text {
     font-style: italic;
-    color: #666;
+    color: #525252;
     font-size: 0.85rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   .other-party-rating {
@@ -2800,13 +2891,14 @@
     gap: 0.5rem;
     margin-top: 0.5rem;
     padding-top: 0.5rem;
-    border-top: 1px solid rgba(16, 185, 129, 0.3);
+    border-top: 1px solid #E5E5E5;
     flex-wrap: wrap;
   }
 
   .other-rating-label {
     font-size: 0.8rem;
-    color: #065f46;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   /* Mobile responsive for new elements */
@@ -2863,19 +2955,19 @@
 
   /* Base Modal Styles */
   .modal {
-    background: white;
-    border-radius: 12px;
+    background: #fff;
+    border: 4px solid #000;
     padding: 2rem;
     max-width: 450px;
     width: 90%;
     position: relative;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   }
 
   .modal h2 {
     margin: 0 0 0.5rem 0;
     font-size: 1.5rem;
-    color: #333;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   /* Void Modal Styles */
@@ -2891,95 +2983,111 @@
     display: block;
     font-weight: 600;
     margin-bottom: 0.5rem;
-    color: #333;
+    color: #000;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .void-modal .form-group .required {
-    color: #dc2626;
+    color: #000;
+    text-decoration: underline;
   }
 
   .void-modal .form-group textarea {
     width: 100%;
     padding: 0.75rem;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
+    border: 1px solid #000;
     font-size: 0.95rem;
     resize: vertical;
     min-height: 100px;
-    font-family: inherit;
+    font-family: 'Source Serif 4', serif;
   }
 
   .void-modal .form-group textarea:focus {
     outline: none;
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+    border: 4px solid #000;
+    box-shadow: none;
   }
 
   .void-description {
-    color: #666;
+    color: #525252;
     margin-bottom: 1.5rem;
     line-height: 1.5;
+    font-family: 'Source Serif 4', serif;
   }
 
   .void-error {
-    background: #fef2f2;
-    color: #dc2626;
+    background: #fff;
+    color: #000;
     padding: 0.75rem 1rem;
-    border-radius: 6px;
+    border: 4px solid #000;
     margin-bottom: 1rem;
     font-size: 0.9rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   .void-reason-display {
-    background: #f8fafc;
+    background: #F5F5F5;
     padding: 1rem;
-    border-radius: 8px;
+    border: 1px solid #E5E5E5;
     margin-bottom: 1.5rem;
   }
 
   .void-reason-display label {
     font-size: 0.85rem;
-    color: #666;
+    color: #525252;
     margin-bottom: 0.5rem;
     display: block;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .void-reason-display p {
-    color: #333;
+    color: #000;
     line-height: 1.5;
     margin: 0;
+    font-family: 'Source Serif 4', serif;
   }
 
   .btn-danger {
-    background: #dc2626;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
+    text-decoration: underline;
   }
 
   .btn-danger:hover:not(:disabled) {
-    background: #b91c1c;
+    background: #fff;
+    color: #000;
   }
 
   .btn-success {
-    background: #10b981;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
   }
 
   .btn-success:hover:not(:disabled) {
-    background: #059669;
+    background: #fff;
+    color: #000;
   }
 
   .btn-reject {
-    background: #f97316;
-    color: white;
-    border: none;
+    background: transparent;
+    color: #000;
+    border: 2px solid #000;
     padding: 0.75rem 1.5rem;
-    border-radius: 8px;
     cursor: pointer;
     font-size: 1rem;
     font-weight: 500;
-    transition: background 0.2s;
+    transition: background 0.2s, color 0.2s;
+    text-decoration: underline;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .btn-reject:hover:not(:disabled) {
-    background: #ea580c;
+    background: #000;
+    color: #fff;
   }
 
   .btn-reject:disabled {
@@ -3010,18 +3118,23 @@
     align-items: flex-start;
     gap: 1rem;
     padding: 1.25rem;
-    background: #f8fafc;
-    border: 2px solid #e2e8f0;
-    border-radius: 12px;
+    background: #fff;
+    border: 2px solid #000;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.2s, color 0.2s;
     text-align: left;
     width: 100%;
   }
 
   .choice-option:hover:not(:disabled) {
-    border-color: #dc2626;
-    background: #fff5f5;
+    border-color: #000;
+    background: #000;
+    color: #fff;
+  }
+
+  .choice-option:hover:not(:disabled) .choice-content h3,
+  .choice-option:hover:not(:disabled) .choice-content p {
+    color: #fff;
   }
 
   .choice-option:disabled {
@@ -3037,21 +3150,23 @@
   .choice-content h3 {
     margin: 0 0 0.5rem 0;
     font-size: 1.1rem;
-    color: #333;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .choice-content p {
     margin: 0;
-    color: #666;
+    color: #525252;
     font-size: 0.9rem;
     line-height: 1.4;
+    font-family: 'Source Serif 4', serif;
   }
 
   /* Second Bidder Offer Modal */
   .offer-details {
-    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    background: #F5F5F5;
     padding: 1.25rem;
-    border-radius: 12px;
+    border: 1px solid #000;
     margin-bottom: 1.5rem;
   }
 
@@ -3063,21 +3178,24 @@
   }
 
   .offer-amount label {
-    color: #92400e;
+    color: #525252;
     font-size: 0.9rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .offer-amount .amount {
     font-size: 1.5rem;
     font-weight: 700;
-    color: #b45309;
+    color: #000;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .offer-note {
-    color: #92400e;
+    color: #525252;
     font-size: 0.9rem;
     line-height: 1.5;
     margin: 0;
+    font-family: 'Source Serif 4', serif;
   }
 
   @media (max-width: 768px) {

@@ -3,7 +3,7 @@ import payload from 'payload';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
-import { queueBid, queueAcceptBid, publishProductUpdate, publishMessageNotification, publishTypingStatus, isRedisConnected } from './redis';
+import { publishMessageNotification, publishTypingStatus } from './redis';
 import { queueEmail, sendVoidRequestEmail, sendVoidResponseEmail, sendAuctionRestartedEmail, sendSecondBidderOfferEmail } from './services/emailService';
 
 dotenv.config();
@@ -523,68 +523,30 @@ const start = async () => {
         return res.status(400).json({ error: 'You cannot bid on your own product' });
       }
 
-      // Queue the bid
-      const result = await queueBid(
-        parseInt(productId, 10),
-        userId,
-        amount,
-        censorName || false
-      );
-
-      if (!result.success) {
-        // If Redis is down, fall back to direct bid creation
-        console.warn('[CMS] Redis queue failed, falling back to direct bid creation');
-
-        const bidTime = new Date().toISOString();
-        const bid = await payload.create({
-          collection: 'bids',
-          data: {
-            product: parseInt(productId, 10),
-            bidder: userId,
-            amount,
-            censorName: censorName || false,
-            bidTime,
-          },
-        });
-
-        // Update product current bid
-        await payload.update({
-          collection: 'products',
-          id: productId,
-          data: { currentBid: amount },
-        });
-
-        // Get bidder name for SSE event
-        const bidder = await payload.findByID({
-          collection: 'users',
-          id: userId,
-        });
-
-        // Publish update via Redis if possible (with full bid data)
-        publishProductUpdate(parseInt(productId, 10), {
-          type: 'bid',
-          success: true,
-          bidId: bid.id,
+      // Process bid synchronously (no Redis dependency)
+      const bidTime = new Date().toISOString();
+      const bid = await payload.create({
+        collection: 'bids',
+        data: {
+          product: parseInt(productId, 10),
+          bidder: userId,
           amount,
-          bidderId: userId,
-          bidderName: bidder?.name || 'Anonymous',
           censorName: censorName || false,
           bidTime,
-        });
+        },
+      });
 
-        return res.json({
-          success: true,
-          bidId: bid.id,
-          fallback: true,
-          message: 'Bid placed successfully (direct)',
-        });
-      }
+      // Update product current bid
+      await payload.update({
+        collection: 'products',
+        id: productId,
+        data: { currentBid: amount },
+      });
 
       res.json({
         success: true,
-        jobId: result.jobId,
-        queued: true,
-        message: 'Bid queued for processing',
+        bidId: bid.id,
+        message: 'Bid placed successfully',
       });
     } catch (error: any) {
       console.error('Error queuing bid:', error);
@@ -660,43 +622,74 @@ const start = async () => {
       const highestBid: any = bids.docs[0];
       const highestBidderId = typeof highestBid.bidder === 'object' ? highestBid.bidder.id : highestBid.bidder;
 
-      // Queue the accept bid action
-      const result = await queueAcceptBid(
-        parseInt(productId, 10),
-        userId,
-        highestBidderId,
-        highestBid.amount
-      );
+      // Process accept bid synchronously (no Redis dependency)
+      // Update product status to sold — the afterChange hook in payload.config.ts
+      // will automatically create the congratulation message and transaction record.
+      await payload.update({
+        collection: 'products',
+        id: productId,
+        data: { status: 'sold' },
+      });
 
-      if (!result.success) {
-        // Fallback to direct update if Redis is down
-        console.warn('[CMS] Redis queue failed, falling back to direct accept');
+      // Send email notifications to buyer and seller
+      const buyer: any = await payload.findByID({ collection: 'users', id: highestBidderId });
+      const seller: any = await payload.findByID({ collection: 'users', id: userId });
 
-        await payload.update({
-          collection: 'products',
-          id: productId,
-          data: { status: 'sold' },
+      const CURRENCY_SYMBOLS: Record<string, string> = { PHP: '₱', USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
+      const currencySymbol = CURRENCY_SYMBOLS[seller?.currency || 'PHP'] || '₱';
+      const platformUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+      if (buyer?.email) {
+        queueEmail({
+          to: buyer.email,
+          subject: `Congratulations! You won the bid for "${product.title}"`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <div style="background: #dc2626; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                <h1 style="margin: 0;">Congratulations!</h1>
+              </div>
+              <div style="background: #f9fafb; padding: 20px; border-radius: 0 0 8px 8px;">
+                <p>Hi ${buyer.name},</p>
+                <p>Great news! Your bid has been accepted for <strong>${product.title}</strong>.</p>
+                <div style="background: #fef3c7; padding: 15px; border-radius: 4px; margin: 15px 0;">
+                  <p style="margin: 5px 0;"><strong>Winning Bid:</strong> ${currencySymbol}${highestBid.amount.toLocaleString()}</p>
+                  <p style="margin: 5px 0;"><strong>Seller:</strong> ${seller?.name || 'Seller'}</p>
+                </div>
+                <p>The seller has been notified and will reach out to you shortly to discuss the next steps.</p>
+                <p><a href="${platformUrl}/inbox?product=${productId}" style="display: inline-block; background: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 15px;">Go to Inbox</a></p>
+              </div>
+            </div>
+          `,
         });
+      }
 
-        publishProductUpdate(parseInt(productId, 10), {
-          type: 'accepted',
-          status: 'sold',
-          winnerId: highestBidderId,
-          amount: highestBid.amount,
-        });
-
-        return res.json({
-          success: true,
-          fallback: true,
-          message: 'Bid accepted successfully (direct)',
+      if (seller?.email) {
+        queueEmail({
+          to: seller.email,
+          subject: `Your item "${product.title}" has been sold!`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <div style="background: #16a34a; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                <h1 style="margin: 0;">Item Sold!</h1>
+              </div>
+              <div style="background: #f9fafb; padding: 20px; border-radius: 0 0 8px 8px;">
+                <p>Hi ${seller.name},</p>
+                <p>Great news! Your item <strong>${product.title}</strong> has been sold.</p>
+                <div style="background: #dcfce7; padding: 15px; border-radius: 4px; margin: 15px 0;">
+                  <p style="margin: 5px 0;"><strong>Winning Bid:</strong> ${currencySymbol}${highestBid.amount.toLocaleString()}</p>
+                  <p style="margin: 5px 0;"><strong>Buyer:</strong> ${buyer?.name || 'Buyer'}</p>
+                </div>
+                <p>A conversation has been automatically created. Please reach out to the buyer to arrange payment and delivery.</p>
+                <p><a href="${platformUrl}/inbox?product=${productId}" style="display: inline-block; background: #16a34a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 15px;">Contact Buyer</a></p>
+              </div>
+            </div>
+          `,
         });
       }
 
       res.json({
         success: true,
-        jobId: result.jobId,
-        queued: true,
-        message: 'Accept bid queued for processing',
+        message: 'Bid accepted successfully',
       });
     } catch (error: any) {
       console.error('Error accepting bid:', error);
@@ -704,11 +697,10 @@ const start = async () => {
     }
   });
 
-  // Health check endpoint for Redis status
+  // Health check endpoint
   app.get('/api/health', (req, res) => {
     res.json({
       status: 'ok',
-      redis: isRedisConnected() ? 'connected' : 'disconnected',
       timestamp: Date.now(),
     });
   });
@@ -1456,6 +1448,49 @@ const start = async () => {
       });
     } catch (error: any) {
       console.error('Error fetching void request:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Notification polling endpoint for authenticated users
+  app.get('/api/notifications/poll', async (req, res) => {
+    try {
+      let userId: number | null = null;
+      if ((req as any).user?.id) {
+        userId = (req as any).user.id;
+      } else {
+        const authHeader = req.headers.authorization;
+        if (authHeader && (authHeader.startsWith('JWT ') || authHeader.startsWith('Bearer '))) {
+          const token = authHeader.startsWith('JWT ') ? authHeader.substring(4) : authHeader.substring(7);
+          try {
+            const decoded = jwt.verify(token, process.env.PAYLOAD_SECRET!) as any;
+            if (decoded.id) userId = decoded.id;
+          } catch { /* ignore */ }
+        }
+      }
+
+      if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      // Count unread messages where user is the receiver
+      const unreadMessages = await payload.find({
+        collection: 'messages',
+        where: {
+          and: [
+            { receiver: { equals: userId } },
+            { read: { equals: false } },
+          ],
+        },
+        limit: 0, // Only need count
+      });
+
+      res.json({
+        unreadCount: unreadMessages.totalDocs,
+        timestamp: Date.now(),
+      });
+    } catch (error: any) {
+      console.error('Error polling notifications:', error);
       res.status(500).json({ error: error.message });
     }
   });

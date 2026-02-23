@@ -1,23 +1,22 @@
 <script lang="ts">
-  export let params: any = undefined; // SvelteKit passes this automatically
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { authStore, getAuthToken } from '$lib/stores/auth';
   import { getUserLimits, type UserLimits } from '$lib/api';
 
-  let userLimits: UserLimits | null = null;
-  let loading = true;
+  let userLimits: UserLimits | null = $state(null);
+  let loading = $state(true);
 
   // Edit mode state
-  let isEditing = false;
-  let saving = false;
-  let error = '';
-  let success = '';
+  let isEditing = $state(false);
+  let saving = $state(false);
+  let error = $state('');
+  let success = $state('');
 
   // Form fields
-  let editName = '';
-  let editCountryCode = '+63';
-  let editPhoneNumber = '';
+  let editName = $state('');
+  let editCountryCode = $state('+63');
+  let editPhoneNumber = $state('');
 
   // Country codes list
   const countryCodes = [
@@ -167,13 +166,13 @@
         <h2>Account Information</h2>
       </div>
       {#if !isEditing}
-        <button class="btn-edit" on:click={startEditing}>Edit Profile</button>
+        <button class="btn-edit" onclick={startEditing}>Edit Profile</button>
       {/if}
     </div>
 
     {#if isEditing}
       <!-- Edit Form -->
-      <form on:submit|preventDefault={saveProfile} class="edit-form">
+      <form onsubmit={(e: SubmitEvent) => { e.preventDefault(); saveProfile(); }} class="edit-form">
         <div class="form-group">
           <label for="editName">Full Name</label>
           <input
@@ -216,7 +215,7 @@
         </div>
 
         <div class="form-actions">
-          <button type="button" class="btn-cancel" on:click={cancelEditing} disabled={saving}>
+          <button type="button" class="btn-cancel" onclick={cancelEditing} disabled={saving}>
             Cancel
           </button>
           <button type="submit" class="btn-save" disabled={saving}>
@@ -375,36 +374,37 @@
   h1 {
     font-size: 2.5rem;
     margin-bottom: 0.5rem;
-    color: #111;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .subtitle {
-    color: #666;
+    color: #525252;
     font-size: 1.1rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   .error-message {
-    background-color: #fee2e2;
-    color: #dc2626;
+    background-color: #F5F5F5;
+    color: #000;
     padding: 1rem;
-    border-radius: 8px;
     margin-bottom: 1.5rem;
-    border: 1px solid #fecaca;
+    border: 2px solid #000;
+    font-family: 'Source Serif 4', serif;
   }
 
   .success-message {
-    background-color: #d1fae5;
-    color: #059669;
+    background-color: #F5F5F5;
+    color: #000;
     padding: 1rem;
-    border-radius: 8px;
     margin-bottom: 1.5rem;
-    border: 1px solid #a7f3d0;
+    border: 2px solid #000;
+    font-family: 'Source Serif 4', serif;
   }
 
   .info-card {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    background: #FFF;
+    border: 2px solid #000;
     padding: 2rem;
     margin-bottom: 2rem;
   }
@@ -429,29 +429,33 @@
   h2 {
     font-size: 1.5rem;
     margin: 0;
-    color: #111;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   h3 {
     font-size: 1.25rem;
     margin: 0;
-    color: #111;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .btn-edit {
     padding: 0.5rem 1rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border: none;
-    border-radius: 6px;
+    background: #000;
+    color: #FFF;
+    border: 2px solid #000;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
   }
 
   .btn-edit:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+    background: #FFF;
+    color: #000;
   }
 
   /* Edit Form Styles */
@@ -469,24 +473,26 @@
 
   .form-group label {
     font-weight: 600;
-    color: #333;
+    color: #000;
     font-size: 0.9rem;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .form-group input,
   .form-group select {
     padding: 0.75rem;
-    border: 2px solid #e5e7eb;
-    border-radius: 6px;
+    border: 2px solid #E5E5E5;
     font-size: 1rem;
+    font-family: 'Source Serif 4', serif;
     transition: border-color 0.2s;
   }
 
   .form-group input:focus,
   .form-group select:focus {
     outline: none;
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+    border: 4px solid #000;
   }
 
   .form-group input:disabled,
@@ -511,14 +517,15 @@
 
   .form-group.readonly .readonly-value {
     padding: 0.75rem;
-    background: #f3f4f6;
-    border-radius: 6px;
-    color: #666;
+    background: #F5F5F5;
+    color: #525252;
+    font-family: 'Source Serif 4', serif;
   }
 
   .readonly-hint {
     font-size: 0.8rem;
-    color: #9ca3af;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .form-actions {
@@ -530,33 +537,38 @@
 
   .btn-cancel {
     padding: 0.75rem 1.5rem;
-    background: white;
-    color: #666;
-    border: 2px solid #e5e7eb;
-    border-radius: 6px;
+    background: #FFF;
+    color: #000;
+    border: 2px solid #000;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
   }
 
   .btn-cancel:hover:not(:disabled) {
-    background: #f3f4f6;
+    background: #000;
+    color: #FFF;
   }
 
   .btn-save {
     padding: 0.75rem 1.5rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border: none;
-    border-radius: 6px;
+    background: #000;
+    color: #FFF;
+    border: 2px solid #000;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
   }
 
   .btn-save:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+    background: #FFF;
+    color: #000;
   }
 
   .btn-save:disabled,
@@ -579,16 +591,18 @@
 
   .info-label {
     font-size: 0.875rem;
-    color: #666;
+    color: #525252;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .info-value {
     font-size: 1.1rem;
-    color: #111;
+    color: #000;
     font-weight: 500;
+    font-family: 'Source Serif 4', serif;
   }
 
   .capitalize {
@@ -599,14 +613,15 @@
   .error-state {
     text-align: center;
     padding: 3rem;
-    color: #666;
+    color: #525252;
+    font-family: 'Source Serif 4', serif;
   }
 
   .spinner {
     width: 40px;
     height: 40px;
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid #dc2626;
+    border: 4px solid #E5E5E5;
+    border-top: 4px solid #000;
     border-radius: 50%;
     animation: spin 1s linear infinite;
     margin: 0 auto 1rem;
@@ -624,12 +639,14 @@
   .section-title {
     font-size: 2rem;
     margin-bottom: 0.5rem;
-    color: #111;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .section-description {
-    color: #666;
+    color: #525252;
     margin-bottom: 2rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   .limits-grid {
@@ -640,21 +657,19 @@
   }
 
   .limit-card {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    background: #FFF;
+    border: 2px solid #000;
     overflow: hidden;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.2s;
   }
 
   .limit-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    background: #F5F5F5;
   }
 
   .limit-card .card-header {
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
+    background: #000;
+    color: #FFF;
     padding: 1.5rem;
     margin-bottom: 0;
     justify-content: flex-start;
@@ -662,7 +677,7 @@
   }
 
   .limit-card h3 {
-    color: white;
+    color: #FFF;
   }
 
   .limit-content {
@@ -685,14 +700,16 @@
   .stat-number {
     font-size: 3rem;
     font-weight: 900;
-    color: #dc2626;
+    color: #000;
     line-height: 1;
+    font-family: 'Playfair Display', serif;
   }
 
   .stat-label {
     font-size: 1rem;
-    color: #666;
+    color: #525252;
     margin-top: 0.25rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .stat-remaining {
@@ -700,71 +717,73 @@
     flex-direction: column;
     align-items: center;
     padding: 1rem;
-    background: #f3f4f6;
-    border-radius: 8px;
+    background: #F5F5F5;
+    border: 1px solid #E5E5E5;
   }
 
   .stat-remaining.warning {
-    background: #fef3c7;
+    background: #F5F5F5;
   }
 
   .stat-remaining.danger {
-    background: #fee2e2;
+    background: #F5F5F5;
+    border: 2px solid #000;
   }
 
   .remaining-number {
     font-size: 2rem;
     font-weight: 700;
-    color: #059669;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .stat-remaining.warning .remaining-number {
-    color: #d97706;
+    color: #000;
   }
 
   .stat-remaining.danger .remaining-number {
-    color: #dc2626;
+    color: #000;
   }
 
   .remaining-label {
     font-size: 0.875rem;
-    color: #666;
+    color: #525252;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .progress-bar {
     width: 100%;
     height: 12px;
-    background: #e5e7eb;
-    border-radius: 6px;
+    background: #E5E5E5;
     overflow: hidden;
     margin-bottom: 1.5rem;
   }
 
   .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #dc2626 0%, #991b1b 100%);
-    border-radius: 6px;
+    background: #000;
     transition: width 0.3s ease;
   }
 
   .progress-fill.posts {
-    background: linear-gradient(90deg, #059669 0%, #047857 100%);
+    background: #000;
   }
 
   .limit-description {
-    color: #666;
+    color: #525252;
     line-height: 1.6;
     margin-bottom: 1.5rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   .text-danger {
-    color: #dc2626;
+    color: #000;
   }
 
   .text-warning {
-    color: #d97706;
+    color: #000;
   }
 
   .card-footer {
@@ -777,46 +796,48 @@
   .btn-secondary,
   .btn-disabled {
     padding: 0.75rem 1.5rem;
-    border-radius: 6px;
     font-weight: 600;
     text-decoration: none;
     transition: all 0.2s;
     text-align: center;
-    border: none;
     cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .btn-primary {
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
+    background: #000;
+    color: #FFF;
+    border: 2px solid #000;
   }
 
   .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+    background: #FFF;
+    color: #000;
   }
 
   .btn-secondary {
-    background: white;
-    color: #dc2626;
-    border: 2px solid #dc2626;
+    background: #FFF;
+    color: #000;
+    border: 2px solid #000;
   }
 
   .btn-secondary:hover {
-    background: #dc2626;
-    color: white;
+    background: #000;
+    color: #FFF;
   }
 
   .btn-disabled {
-    background: #e5e7eb;
-    color: #9ca3af;
+    background: #F5F5F5;
+    color: #525252;
+    border: 2px solid #E5E5E5;
     cursor: not-allowed;
   }
 
   .info-banner {
-    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
-    border: 2px solid #3b82f6;
-    border-radius: 8px;
+    background: #F5F5F5;
+    border: 2px solid #000;
     padding: 1.25rem;
     display: flex;
     align-items: flex-start;
@@ -829,8 +850,9 @@
   }
 
   .info-text {
-    color: #1e3a8a;
+    color: #000;
     line-height: 1.6;
+    font-family: 'Source Serif 4', serif;
   }
 
   @media (max-width: 768px) {

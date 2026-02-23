@@ -1,18 +1,18 @@
 <script lang="ts">
-  export let params: any = undefined; // SvelteKit passes this automatically
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { authStore } from '$lib/stores/auth';
+  import ThreeAuthBackground from '$lib/components/three/ThreeAuthBackground.svelte';
 
-  let name = '';
-  let email = '';
-  let password = '';
-  let confirmPassword = '';
-  let countryCode = '+63';
-  let phoneNumber = '';
-  let submitting = false;
-  let error = '';
-  let success = false;
+  let name = $state('');
+  let email = $state('');
+  let password = $state('');
+  let confirmPassword = $state('');
+  let countryCode = $state('+63');
+  let phoneNumber = $state('');
+  let submitting = $state(false);
+  let error = $state('');
+  let success = $state(false);
 
   // Country codes list with common countries
   const countryCodes = [
@@ -38,8 +38,13 @@
     { code: '+974', country: 'Qatar', flag: '🇶🇦' },
   ];
 
-  // Get redirect URL from query params
-  const redirectUrl = $page.url.searchParams.get('redirect') || '/';
+  // Get redirect URL from query params - only allow relative paths to prevent open redirect
+  function getSafeRedirect(url: string | null): string {
+    if (!url) return '/';
+    if (url.startsWith('/') && !url.startsWith('//')) return url;
+    return '/';
+  }
+  const redirectUrl = getSafeRedirect(page.url.searchParams.get('redirect'));
 
   async function handleRegister(e: Event) {
     e.preventDefault();
@@ -141,8 +146,9 @@
   <title>Register - BidMo.to</title>
 </svelte:head>
 
-<div class="register-page">
-  <div class="register-container">
+<div class="register-page" style="position: relative; overflow: hidden;">
+  <ThreeAuthBackground />
+  <div class="register-container" style="position: relative; z-index: 1;">
     <h1>Create Account</h1>
     <p class="subtitle">Join our marketplace to buy and sell products</p>
 
@@ -158,7 +164,7 @@
       </div>
     {/if}
 
-    <form on:submit={handleRegister}>
+    <form onsubmit={handleRegister}>
       <div class="form-group">
         <label for="name">Full Name</label>
         <input
@@ -259,7 +265,7 @@
     align-items: center;
     justify-content: center;
     padding: 2rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+    background: #fff;
   }
 
   .register-container {
@@ -267,8 +273,7 @@
     width: 100%;
     background-color: white;
     padding: 3rem;
-    border-radius: 12px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    border: 4px solid #000;
   }
 
   h1 {
@@ -285,20 +290,19 @@
   }
 
   .success-message {
-    background-color: #10b981;
+    background-color: #000;
     color: white;
     padding: 1rem;
-    border-radius: 6px;
     margin-bottom: 1.5rem;
     text-align: center;
     font-weight: 500;
   }
 
   .error-message {
-    background-color: #ef4444;
-    color: white;
+    background-color: #fff;
+    color: #000;
+    border: 4px solid #000;
     padding: 1rem;
-    border-radius: 6px;
     margin-bottom: 1.5rem;
     text-align: center;
   }
@@ -318,16 +322,17 @@
     width: 100%;
     padding: 0.875rem;
     font-size: 1rem;
-    border: 2px solid #e5e7eb;
-    border-radius: 6px;
+    border: 1px solid #000;
     font-family: inherit;
     transition: border-color 0.2s;
   }
 
   input:focus {
     outline: none;
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+    border-color: #000;
+    border-width: 4px;
+    box-shadow: none;
+    padding: calc(0.875rem - 3px);
   }
 
   input:disabled {
@@ -344,8 +349,7 @@
     width: 110px;
     padding: 0.875rem 0.5rem;
     font-size: 1rem;
-    border: 2px solid #e5e7eb;
-    border-radius: 6px;
+    border: 1px solid #000;
     font-family: inherit;
     background-color: white;
     cursor: pointer;
@@ -354,8 +358,9 @@
 
   .country-code-select:focus {
     outline: none;
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+    border-color: #000;
+    border-width: 4px;
+    box-shadow: none;
   }
 
   .country-code-select:disabled {
@@ -372,24 +377,27 @@
     padding: 1rem;
     font-size: 1.1rem;
     font-weight: 600;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border: none;
-    border-radius: 6px;
+    background-color: #000;
+    color: #fff;
+    border: 2px solid #000;
     cursor: pointer;
     margin-top: 1rem;
-    transition: transform 0.2s, box-shadow 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    transition: background-color 0.2s, color 0.2s;
   }
 
   button:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+    background-color: #fff;
+    color: #000;
   }
 
   button:disabled {
-    background: #ccc;
+    background: #E5E5E5;
+    border-color: #E5E5E5;
+    color: #525252;
     cursor: not-allowed;
-    transform: none;
   }
 
   .additional-info {
@@ -403,8 +411,8 @@
   }
 
   .additional-info a {
-    color: #dc2626;
-    text-decoration: none;
+    color: #000;
+    text-decoration: underline;
     font-weight: 600;
   }
 
@@ -414,9 +422,9 @@
 
   .features {
     text-align: left;
-    background-color: #f9fafb;
+    background-color: #F5F5F5;
     padding: 1.5rem;
-    border-radius: 8px;
+    border: 1px solid #000;
     margin-top: 1.5rem;
   }
 

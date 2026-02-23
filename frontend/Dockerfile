@@ -1,17 +1,20 @@
 # Frontend Dockerfile for SvelteKit
-FROM node:18-alpine
+FROM node:22-alpine
 
 # Set working directory
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json package-lock.json ./
 
-# Install dependencies
-RUN npm install
+# Clean install dependencies (ensures correct native binaries for Alpine)
+RUN npm ci
 
 # Copy source code
 COPY . .
+
+# Generate SvelteKit types
+RUN npx svelte-kit sync
 
 # Expose port
 EXPOSE 5173

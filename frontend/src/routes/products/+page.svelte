@@ -2,44 +2,47 @@
   import type { PageData } from './$types';
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
+  import { browser } from '$app/environment';
   import { authStore } from '$lib/stores/auth';
   import { regions, getCitiesByRegion } from '$lib/data/philippineLocations';
+  import ThreeHero from '$lib/components/three/ThreeHero.svelte';
 
-  export let data: PageData;
-  export let params: any = undefined; // SvelteKit passes this automatically
+  let { data } = $props<{ data: PageData }>();
 
-  let countdowns: { [key: string]: string } = {};
-  let countdownInterval: ReturnType<typeof setInterval> | null = null;
-  let userBids: { [productId: string]: number } = {}; // Maps product ID to user's bid amount
-  let userBidsByProduct: { [productId: string]: any[] } = {}; // All user bids per product
+  let countdowns: { [key: string]: string } = $state({});
+  let countdownInterval: ReturnType<typeof setInterval> | null = $state(null);
+  let userBids: { [productId: string]: number } = $state({}); // Maps product ID to user's bid amount
+  let userBidsByProduct: { [productId: string]: any[] } = $state({}); // All user bids per product
 
   // Local state for form inputs
-  let searchInput = data.search || '';
-  let regionInput = data.region || '';
-  let cityInput = data.city || '';
-  let searchTimeout: ReturnType<typeof setTimeout> | null = null;
-  let lastDataSearch = data.search || ''; // Track last known data.search value
-  let lastDataRegion = data.region || '';
-  let lastDataCity = data.city || '';
+  let searchInput = $state(data.search || '');
+  let regionInput = $state(data.region || '');
+  let cityInput = $state(data.city || '');
+  let searchTimeout: ReturnType<typeof setTimeout> | null = $state(null);
+  let lastDataSearch = $state(data.search || ''); // Track last known data.search value
+  let lastDataRegion = $state(data.region || '');
+  let lastDataCity = $state(data.city || '');
 
   // Items per page options
   const itemsPerPageOptions = [12, 24, 48, 96];
 
   // Get cities for selected region
-  $: availableCities = regionInput ? getCitiesByRegion(regionInput) : [];
+  let availableCities = $derived(regionInput ? getCitiesByRegion(regionInput) : []);
 
   // Reset city when region changes
-  $: if (regionInput && !availableCities.includes(cityInput)) {
-    // Don't auto-clear if we're loading from URL params
-    const urlCity = $page.url.searchParams.get('city') || '';
-    if (cityInput && cityInput !== urlCity) {
-      cityInput = '';
+  $effect(() => {
+    if (regionInput && !availableCities.includes(cityInput)) {
+      // Don't auto-clear if we're loading from URL params
+      const urlCity = page.url.searchParams.get('city') || '';
+      if (cityInput && cityInput !== urlCity) {
+        cityInput = '';
+      }
     }
-  }
+  });
 
   function updateURL(params: Record<string, string | number>) {
-    const url = new URL($page.url);
+    const url = new URL(page.url);
     Object.entries(params).forEach(([key, value]) => {
       if (value) {
         url.searchParams.set(key, value.toString());
@@ -113,9 +116,9 @@
     }, 100);
   }
 
-  function goToPage(page: number) {
+  function goToPage(pageNum: number) {
     updateURL({
-      page: page.toString(),
+      page: pageNum.toString(),
       status: data.status,
       search: searchInput,
       region: regionInput,
@@ -138,7 +141,7 @@
 
   // Update local search input when data changes (e.g., browser back/forward)
   // Only update if data.search has actually changed and is different from current input
-  $: {
+  $effect(() => {
     const currentDataSearch = data.search || '';
     if (currentDataSearch !== lastDataSearch) {
       // data.search changed - only update input if it's different from what user typed
@@ -147,10 +150,10 @@
       }
       lastDataSearch = currentDataSearch;
     }
-  }
+  });
 
   // Update local location inputs when data changes
-  $: {
+  $effect(() => {
     const currentDataRegion = data.region || '';
     if (currentDataRegion !== lastDataRegion) {
       if (currentDataRegion !== regionInput) {
@@ -158,9 +161,9 @@
       }
       lastDataRegion = currentDataRegion;
     }
-  }
+  });
 
-  $: {
+  $effect(() => {
     const currentDataCity = data.city || '';
     if (currentDataCity !== lastDataCity) {
       if (currentDataCity !== cityInput) {
@@ -168,7 +171,7 @@
       }
       lastDataCity = currentDataCity;
     }
-  }
+  });
 
   function formatPrice(price: number, currency: string = 'PHP'): string {
     return new Intl.NumberFormat('en-US', {
@@ -188,7 +191,7 @@
   }
 
   function updateCountdowns() {
-    data.products.forEach(product => {
+    data.products.forEach((product: any) => {
       const now = new Date().getTime();
       const end = new Date(product.auctionEndDate).getTime();
       const diff = end - now;
@@ -211,7 +214,6 @@
         countdowns[product.id] = `${minutes}m ${seconds}s`;
       }
     });
-    countdowns = { ...countdowns }; // Trigger reactivity
   }
 
   function getUrgencyClass(endDate: string): string {
@@ -236,7 +238,7 @@
     }
 
     try {
-      const token = localStorage.getItem('auth_token');
+      const token = browser ? localStorage.getItem('auth_token') : null;
       const headers: HeadersInit = {};
       if (token) {
         headers['Authorization'] = `JWT ${token}`;
@@ -279,16 +281,18 @@
   }
 
   // Sort products to show ones with user bids first
-  $: sortedProducts = [...data.products].sort((a, b) => {
+  let sortedProducts = $derived([...data.products].sort((a, b) => {
     const aHasBid = userBids[a.id] ? 1 : 0;
     const bHasBid = userBids[b.id] ? 1 : 0;
     return bHasBid - aHasBid; // Products with bids first
-  });
+  }));
 
   // Refetch bids when auth state changes
-  $: if ($authStore.isAuthenticated !== undefined) {
-    fetchUserBids();
-  }
+  $effect(() => {
+    if ($authStore.isAuthenticated !== undefined) {
+      fetchUserBids();
+    }
+  });
 
   onMount(() => {
     updateCountdowns();
@@ -331,6 +335,7 @@
 
   onDestroy(() => {
     if (countdownInterval) clearInterval(countdownInterval);
+    if (searchTimeout) clearTimeout(searchTimeout);
   });
 </script>
 
@@ -339,12 +344,12 @@
 </svelte:head>
 <!-- Beta Notice Banner -->
 <div class="-mx-4 sm:-mx-6 lg:-mx-8 mb-0 overflow-hidden relative z-10">
-  <div class="bg-gradient-to-br from-yellow-400 to-yellow-500 border-b-4 border-yellow-600 px-3 py-4">
+  <div class="bg-white border-b-4 border-black px-3 py-4">
     <div class="max-w-7xl mx-auto text-center">
-      <div class="inline-block bg-black/20 text-white px-2 sm:px-3 py-1 rounded-full text-xs font-bold tracking-wide sm:tracking-wider mb-2">
-        🚧 EXPERIMENTAL
+      <div class="inline-block bg-black text-white px-2 sm:px-3 py-1 text-xs font-bold tracking-wide sm:tracking-wider mb-2" style="font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em;">
+        EXPERIMENTAL
       </div>
-      <p class="text-white text-xs sm:text-sm md:text-base leading-snug sm:leading-relaxed mx-auto max-w-5xl px-2 break-words">
+      <p class="text-black text-xs sm:text-sm md:text-base leading-snug sm:leading-relaxed mx-auto max-w-5xl px-2 break-words">
         We're testing what works and gathering public interest.
         <strong class="font-bold underline whitespace-nowrap">No integrated payments yet</strong> —
         transactions are coordinated directly between buyers and sellers.
@@ -356,45 +361,44 @@
 
 <!-- Welcome Hero Section -->
 <div class="-mx-4 sm:-mx-6 lg:-mx-8 mb-8">
-  <section class="bg-gradient-to-br from-primary to-primary-dark text-white px-4 sm:px-6 lg:px-8 py-8 sm:py-12 lg:py-16 text-center">
-    <div class="max-w-4xl mx-auto">
+  <section class="bg-white border-b-8 border-black text-black px-4 sm:px-6 lg:px-8 py-8 sm:py-12 lg:py-16 text-center relative overflow-hidden">
+    <ThreeHero />
+    <div class="max-w-4xl mx-auto relative" style="z-index: 1;">
       <div class="mb-6">
-        <img src="/bidmo.to.png" alt="BidMo.to" class="h-20 sm:h-28 lg:h-36 w-auto mx-auto drop-shadow-2xl" />
+        <img src="/bidmo.to.png" alt="BidMo.to" class="h-20 sm:h-28 lg:h-36 w-auto mx-auto" />
       </div>
 
-      <h1 class="text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-3">
-        Welcome to <span class="bg-gradient-to-r from-yellow-400 to-yellow-500 bg-clip-text text-transparent">BidMo.to</span>
+      <h1 class="text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-3" style="font-family: 'Playfair Display', serif;">
+        Welcome to <span class="text-black">BidMo.to</span>
       </h1>
 
-      <p class="text-base sm:text-lg lg:text-xl mb-3 opacity-95">
+      <p class="text-base sm:text-lg lg:text-xl mb-3" style="font-family: 'Source Serif 4', serif;">
         Bid mo 'to! The Filipino way to bid, buy, and sell unique items
       </p>
 
-      <p class="text-sm sm:text-base mb-6 opacity-90 max-w-2xl mx-auto">
+      <p class="text-sm sm:text-base mb-6 max-w-2xl mx-auto" style="color: #525252; font-family: 'Source Serif 4', serif;">
         Join us in building the Philippines' most exciting auction platform.
         Your participation helps us understand what features matter most!
       </p>
 
       <div class="flex flex-wrap gap-4 sm:gap-8 justify-center text-sm sm:text-base">
         <div class="flex items-center gap-2">
-          <span class="text-xl">🔍</span>
-          <span>Browse Auctions</span>
+          <span class="text-xl">Browse Auctions</span>
         </div>
         {#if $authStore.isAuthenticated}
           <div class="flex items-center gap-2">
-            <span class="text-xl">🔨</span>
-            <a href="/sell" class="hover:text-yellow-400 transition">List an Item</a>
+            <a href="/sell" class="text-black border-b-2 border-black hover:bg-black hover:text-white transition px-1">List an Item</a>
           </div>
         {/if}
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2" style="font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em;">
           <span class="text-xl font-bold">FREE</span>
           <span>To Join</span>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2" style="font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em;">
           <span class="text-xl font-bold">SAFE</span>
           <span>No Payment Integration</span>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2" style="font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em;">
           <span class="text-xl font-bold">BETA</span>
           <span>Help Us Grow</span>
         </div>
@@ -413,19 +417,19 @@
         <input
           type="text"
           bind:value={searchInput}
-          on:input={handleSearchInput}
+          oninput={handleSearchInput}
           placeholder="Search by title, description, or keywords..."
           class="search-input"
         />
         {#if searchInput}
-          <button class="clear-search" on:click={() => { searchInput = ''; handleSearchInput(); }}>✕</button>
+          <button class="clear-search" onclick={() => { searchInput = ''; handleSearchInput(); }}>✕</button>
         {/if}
       </div>
 
       <div class="location-filters">
         <select
           bind:value={regionInput}
-          on:change={handleLocationInput}
+          onchange={handleLocationInput}
           class="location-select"
         >
           <option value="">All Regions</option>
@@ -435,7 +439,7 @@
         </select>
         <select
           bind:value={cityInput}
-          on:change={handleLocationInput}
+          onchange={handleLocationInput}
           class="location-select"
           disabled={!regionInput}
         >
@@ -445,7 +449,7 @@
           {/each}
         </select>
         {#if searchInput || regionInput || cityInput}
-          <button class="btn-clear-filters" on:click={clearFilters}>Clear All</button>
+          <button class="btn-clear-filters" onclick={clearFilters}>Clear All</button>
         {/if}
       </div>
     </div>
@@ -458,7 +462,7 @@
     <div class="controls-container">
       <div class="items-per-page">
         <label>Items per page:</label>
-        <select value={data.limit} on:change={(e) => changeItemsPerPage(parseInt(e.currentTarget.value))}>
+        <select value={data.limit} onchange={(e) => changeItemsPerPage(parseInt(e.currentTarget.value))}>
           {#each itemsPerPageOptions as option}
             <option value={option}>{option}</option>
           {/each}
@@ -473,7 +477,7 @@
       {#if data.search}<p class="filter-detail">Search: "{data.search}"</p>{/if}
       {#if data.region}<p class="filter-detail">Region: "{data.region}"</p>{/if}
       {#if data.city}<p class="filter-detail">City: "{data.city}"</p>{/if}
-      <button class="btn-clear-search" on:click={clearFilters}>Clear Filters</button>
+      <button class="btn-clear-search" onclick={clearFilters}>Clear Filters</button>
     </div>
   {/if}
 
@@ -482,21 +486,21 @@
     <button
       class="tab"
       class:active={data.status === 'active'}
-      on:click={() => changeTab('active')}
+      onclick={() => changeTab('active')}
     >
       Active Auctions
     </button>
     <button
       class="tab"
       class:active={data.status === 'ended'}
-      on:click={() => changeTab('ended')}
+      onclick={() => changeTab('ended')}
     >
       Ended Auctions
     </button>
     <button
       class="tab"
       class:active={data.status === 'my-bids'}
-      on:click={() => changeTab('my-bids')}
+      onclick={() => changeTab('my-bids')}
     >
       My Bids
     </button>
@@ -610,7 +614,7 @@
             <button
               class="pagination-btn"
               disabled={data.currentPage === 1}
-              on:click={() => goToPage(data.currentPage - 1)}
+              onclick={() => goToPage(data.currentPage - 1)}
             >
               ← Previous
             </button>
@@ -620,7 +624,7 @@
                 <button
                   class="pagination-number"
                   class:active={data.currentPage === i + 1}
-                  on:click={() => goToPage(i + 1)}
+                  onclick={() => goToPage(i + 1)}
                 >
                   {i + 1}
                 </button>
@@ -630,7 +634,7 @@
             <button
               class="pagination-btn"
               disabled={data.currentPage === data.totalPages}
-              on:click={() => goToPage(data.currentPage + 1)}
+              onclick={() => goToPage(data.currentPage + 1)}
             >
               Next →
             </button>
@@ -665,6 +669,11 @@
   h1 {
     margin-bottom: 1.5rem;
     font-size: 2.5rem;
+    font-family: 'Playfair Display', serif;
+  }
+
+  h2 {
+    font-family: 'Playfair Display', serif;
   }
 
   .search-filter-container {
@@ -681,15 +690,14 @@
     width: 100%;
     padding: 1rem 3rem 1rem 1rem;
     font-size: 1rem;
-    border: 2px solid #e5e7eb;
-    border-radius: 8px;
-    transition: border-color 0.2s;
+    border: 1px solid #000;
+    font-family: 'Source Serif 4', serif;
   }
 
   .search-input:focus {
     outline: none;
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+    border: 4px solid #000;
+    box-shadow: none;
   }
 
   .location-filters {
@@ -705,40 +713,40 @@
     min-width: 200px;
     padding: 0.75rem 1rem;
     font-size: 0.95rem;
-    border: 2px solid #e5e7eb;
-    border-radius: 8px;
-    transition: border-color 0.2s;
+    border: 1px solid #000;
     background-color: white;
     cursor: pointer;
+    font-family: 'Source Serif 4', serif;
   }
 
   .location-select:focus {
     outline: none;
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+    border: 4px solid #000;
+    box-shadow: none;
   }
 
   .location-select:disabled {
-    background-color: #f5f5f5;
+    background-color: #F5F5F5;
     cursor: not-allowed;
     opacity: 0.6;
   }
 
   .btn-clear-filters {
     padding: 0.75rem 1.5rem;
-    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-    color: white;
-    border: none;
-    border-radius: 8px;
+    background: transparent;
+    color: #000;
+    border: 2px solid #000;
     font-weight: 600;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
     white-space: nowrap;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .btn-clear-filters:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(107, 114, 128, 0.4);
+    background: #000;
+    color: #fff;
   }
 
   .clear-search {
@@ -749,37 +757,38 @@
     background: none;
     border: none;
     font-size: 1.25rem;
-    color: #999;
+    color: #525252;
     cursor: pointer;
     padding: 0.5rem;
     line-height: 1;
-    transition: color 0.2s;
   }
 
   .clear-search:hover {
-    color: #dc2626;
+    color: #000;
   }
 
   .search-results {
-    color: #666;
+    color: #525252;
     font-size: 0.95rem;
     margin: 0;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .btn-clear-search {
     padding: 0.75rem 1.5rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border: none;
-    border-radius: 6px;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
     font-weight: 600;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .btn-clear-search:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .controls-container {
@@ -794,33 +803,32 @@
 
   .items-per-page label {
     font-size: 0.95rem;
-    color: #666;
+    color: #525252;
     font-weight: 500;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .items-per-page select {
     padding: 0.5rem 2.5rem 0.5rem 0.75rem;
     font-size: 0.95rem;
-    border: 2px solid #e5e7eb;
-    border-radius: 6px;
+    border: 1px solid #000;
     background-color: white;
     background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
     background-repeat: no-repeat;
     background-position: right 0.5rem center;
     background-size: 1.25rem;
     cursor: pointer;
-    transition: border-color 0.2s;
     appearance: none;
   }
 
   .items-per-page select:hover {
-    border-color: #d1d5db;
+    border-color: #000;
   }
 
   .items-per-page select:focus {
     outline: none;
-    border-color: #dc2626;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+    border: 4px solid #000;
+    box-shadow: none;
   }
 
   /* Tabs */
@@ -828,49 +836,50 @@
     display: flex;
     gap: 0.5rem;
     margin-bottom: 2rem;
-    border-bottom: 2px solid #f0f0f0;
-    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #000;
+    padding-bottom: 0;
   }
 
   .tab {
     flex: 1;
     padding: 0.75rem 1rem;
     background: white;
-    border: 2px solid #e5e7eb;
-    border-radius: 8px;
+    border: 2px solid #000;
+    border-bottom: none;
     font-weight: 600;
     font-size: 1rem;
-    color: #666;
+    color: #525252;
     cursor: pointer;
-    transition: all 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .tab:hover {
-    background: #f9fafb;
-    border-color: #d1d5db;
+    background: #F5F5F5;
+    color: #000;
   }
 
   .tab.active {
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    border-color: #dc2626;
-    color: white;
+    background: #000;
+    border-color: #000;
+    color: #fff;
   }
 
   .tab-badge {
-    background: rgba(255, 255, 255, 0.3);
+    background: #F5F5F5;
     padding: 0.125rem 0.5rem;
-    border-radius: 12px;
     font-size: 0.75rem;
     font-weight: 700;
   }
 
   .tab.active .tab-badge {
-    background: rgba(255, 255, 255, 0.9);
-    color: #dc2626;
+    background: #fff;
+    color: #000;
   }
 
   .auction-section {
@@ -893,35 +902,38 @@
     background-color: rgba(0, 0, 0, 0.85);
     color: white;
     padding: 0.75rem 1.5rem;
-    border-radius: 8px;
     font-size: 1.25rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     pointer-events: none;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .empty-state {
     text-align: center;
     padding: 4rem 2rem;
-    background-color: #f9f9f9;
-    border-radius: 8px;
+    background-color: #F5F5F5;
+    border: 1px solid #000;
   }
 
   .empty-state p {
     font-size: 1.2rem;
     margin-bottom: 1rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   .empty-state .filter-detail {
     font-size: 1rem;
-    color: #666;
+    color: #525252;
     margin-bottom: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .empty-state a {
-    color: #0066cc;
+    color: #000;
     font-weight: bold;
+    border-bottom: 2px solid #000;
   }
 
   .products-grid {
@@ -932,10 +944,8 @@
 
   .product-card {
     background: white;
-    border: 1px solid #ddd;
-    border-radius: 8px;
+    border: 1px solid #000;
     overflow: hidden;
-    transition: transform 0.2s, box-shadow 0.2s;
     text-decoration: none;
     color: inherit;
     display: flex;
@@ -943,8 +953,9 @@
   }
 
   .product-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-width: 2px;
+    background: #000;
+    color: #fff;
   }
 
   .product-image {
@@ -952,7 +963,7 @@
     width: 100%;
     height: 200px;
     overflow: hidden;
-    background-color: #f0f0f0;
+    background-color: #F5F5F5;
   }
 
   .product-image img {
@@ -967,9 +978,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: #e0e0e0;
-    color: #999;
+    background-color: #F5F5F5;
+    color: #525252;
     font-size: 1.2rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .product-info {
@@ -982,12 +994,14 @@
   .product-info h3 {
     margin: 0 0 0.5rem 0;
     font-size: 1.25rem;
+    font-family: 'Playfair Display', serif;
   }
 
   .description {
-    color: #666;
+    color: #525252;
     margin-bottom: 0.75rem;
     flex: 1;
+    font-family: 'Source Serif 4', serif;
   }
 
   .location-info {
@@ -995,16 +1009,16 @@
     align-items: center;
     gap: 0.375rem;
     font-size: 0.85rem;
-    color: #666;
+    color: #525252;
     margin-bottom: 0.75rem;
     padding: 0.375rem 0.5rem;
-    background-color: #f8f9fa;
-    border-radius: 4px;
+    background-color: #F5F5F5;
     width: fit-content;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .location-icon {
-    color: #dc2626;
+    color: #000;
     flex-shrink: 0;
   }
 
@@ -1047,29 +1061,31 @@
     flex-direction: column;
     gap: 0.25rem;
     padding: 0.5rem;
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%);
-    border: 1px solid rgba(16, 185, 129, 0.3);
-    border-radius: 6px;
+    background: #F5F5F5;
+    border: 2px solid #000;
     margin-top: 0.5rem;
   }
 
   .label {
-    color: #666;
+    color: #525252;
     font-size: 0.9rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .label-small {
-    color: #666;
+    color: #525252;
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .label-tiny {
-    color: #888;
+    color: #525252;
     font-size: 0.7rem;
     font-weight: 500;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .price {
@@ -1086,28 +1102,27 @@
   .price-tiny {
     font-size: 0.85rem;
     font-weight: 600;
-    color: #555;
+    color: #525252;
   }
 
   .current-bid {
-    color: #0066cc;
+    color: #000;
   }
 
   .your-bid {
-    color: #10b981;
+    color: #000;
   }
 
   .percent-increase {
     display: flex;
     align-items: center;
     gap: 0.25rem;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
+    background: #000;
+    color: #fff;
     padding: 0.25rem 0.5rem;
-    border-radius: 12px;
     font-size: 0.75rem;
     font-weight: 700;
-    box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .arrow-up-mini {
@@ -1120,7 +1135,7 @@
     justify-content: space-between;
     align-items: center;
     padding-top: 1rem;
-    border-top: 1px solid #eee;
+    border-top: 1px solid #000;
   }
 
   .status-row {
@@ -1132,42 +1147,44 @@
 
   .status {
     padding: 0.25rem 0.75rem;
-    border-radius: 4px;
-    font-size: 0.85rem;
+    font-size: 0.75rem;
     font-weight: bold;
     text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.05em;
   }
 
   .owner-badge {
     padding: 0.25rem 0.75rem;
-    border-radius: 4px;
     font-size: 0.75rem;
     font-weight: 700;
     text-transform: uppercase;
-    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-    color: white;
-    box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3);
-    letter-spacing: 0.5px;
+    background: #000;
+    color: #fff;
+    letter-spacing: 0.05em;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .status-active {
-    background-color: #10b981;
-    color: white;
+    background: #000;
+    color: #fff;
   }
 
   .status-ended {
-    background-color: #ef4444;
-    color: white;
+    background: #fff;
+    color: #000;
+    border: 2px solid #000;
   }
 
   .status-sold {
-    background-color: #6366f1;
-    color: white;
+    background: #000;
+    color: #fff;
   }
 
   .status-cancelled {
-    background-color: #9ca3af;
-    color: white;
+    background: #fff;
+    color: #525252;
+    border: 1px solid #525252;
   }
 
   .countdown-badge {
@@ -1175,11 +1192,9 @@
     align-items: center;
     gap: 0.375rem;
     padding: 0.5rem 0.75rem;
-    border-radius: 6px;
     font-size: 0.875rem;
     font-weight: 700;
-    font-family: 'Courier New', monospace;
-    transition: all 0.3s;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .countdown-icon {
@@ -1188,73 +1203,40 @@
 
   /* Normal - More than 24 hours */
   .countdown-normal {
-    background-color: #e0f2fe;
-    color: #0369a1;
-    border: 1px solid #7dd3fc;
+    background-color: #fff;
+    color: #000;
+    border: 1px solid #000;
   }
 
   /* Warning - Less than 24 hours */
   .countdown-warning {
-    background-color: #fef3c7;
-    color: #92400e;
-    border: 1px solid #fbbf24;
-    animation: pulse-warning 2s ease-in-out infinite;
+    background-color: #fff;
+    color: #000;
+    border: 2px solid #000;
+    font-weight: bold;
   }
 
   /* Urgent - Less than 12 hours */
   .countdown-urgent {
-    background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%);
-    color: #9a3412;
-    border: 2px solid #f97316;
-    animation: pulse-urgent 1.5s ease-in-out infinite;
-    box-shadow: 0 2px 8px rgba(249, 115, 22, 0.3);
+    background: #fff;
+    color: #000;
+    border: 4px solid #000;
+    font-weight: 800;
+    text-transform: uppercase;
   }
 
   /* Critical - Less than 3 hours */
   .countdown-critical {
-    background: linear-gradient(135deg, #fecaca 0%, #fca5a5 100%);
-    color: #991b1b;
-    border: 2px solid #dc2626;
-    animation: pulse-critical 1s ease-in-out infinite;
-    box-shadow: 0 2px 12px rgba(220, 38, 38, 0.4);
+    background: #000;
+    color: #fff;
   }
 
   /* Ended */
   .countdown-ended {
-    background-color: #f3f4f6;
-    color: #6b7280;
-    border: 1px solid #d1d5db;
-  }
-
-  @keyframes pulse-warning {
-    0%, 100% {
-      transform: scale(1);
-    }
-    50% {
-      transform: scale(1.02);
-    }
-  }
-
-  @keyframes pulse-urgent {
-    0%, 100% {
-      transform: scale(1);
-      box-shadow: 0 2px 8px rgba(249, 115, 22, 0.3);
-    }
-    50% {
-      transform: scale(1.03);
-      box-shadow: 0 4px 12px rgba(249, 115, 22, 0.5);
-    }
-  }
-
-  @keyframes pulse-critical {
-    0%, 100% {
-      transform: scale(1);
-      box-shadow: 0 2px 12px rgba(220, 38, 38, 0.4);
-    }
-    50% {
-      transform: scale(1.05);
-      box-shadow: 0 6px 16px rgba(220, 38, 38, 0.6);
-    }
+    background-color: #fff;
+    color: #525252;
+    text-decoration: line-through;
+    border: 1px solid #E5E5E5;
   }
 
   /* Pagination */
@@ -1270,26 +1252,25 @@
   .pagination-btn {
     padding: 0.625rem 1.25rem;
     background-color: white;
-    border: 2px solid #dc2626;
-    color: #dc2626;
-    border-radius: 6px;
+    border: 2px solid #000;
+    color: #000;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .pagination-btn:hover:not(:disabled) {
-    background-color: #dc2626;
-    color: white;
-    transform: translateY(-2px);
-    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+    background-color: #000;
+    color: #fff;
   }
 
   .pagination-btn:disabled {
     opacity: 0.3;
     cursor: not-allowed;
-    border-color: #ccc;
-    color: #ccc;
+    border-color: #E5E5E5;
+    color: #525252;
   }
 
   .pagination-numbers {
@@ -1301,22 +1282,22 @@
     min-width: 2.5rem;
     padding: 0.625rem 0.75rem;
     background-color: white;
-    border: 2px solid #e5e7eb;
-    color: #666;
-    border-radius: 6px;
+    border: 2px solid #000;
+    color: #000;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .pagination-number:hover {
-    border-color: #dc2626;
-    color: #dc2626;
+    border-color: #000;
+    background-color: #F5F5F5;
+    color: #000;
   }
 
   .pagination-number.active {
-    background-color: #dc2626;
-    border-color: #dc2626;
-    color: white;
+    background-color: #000;
+    border-color: #000;
+    color: #fff;
   }
 </style>

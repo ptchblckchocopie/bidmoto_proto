@@ -1,12 +1,10 @@
 <script lang="ts">
-  export let params: any = undefined; // SvelteKit passes this automatically
   import { goto } from '$app/navigation';
   import { authStore } from '$lib/stores/auth';
   import { onMount } from 'svelte';
   import ProductForm from '$lib/components/ProductForm.svelte';
   import type { Product } from '$lib/api';
 
-  // Check authentication on mount
   onMount(() => {
     if (!$authStore.isAuthenticated) {
       goto('/login?redirect=/sell');
@@ -14,7 +12,6 @@
   });
 
   function handleSuccess(product: Product) {
-    // Redirect to product page after successful creation
     setTimeout(() => {
       goto(`/products/${product.id}`);
     }, 1500);
@@ -67,27 +64,26 @@
   .form-container {
     background-color: white;
     padding: 2rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border: 2px solid #000;
     margin-bottom: 2rem;
   }
 
   .info-box {
-    background-color: #fff3cd;
+    background-color: #F5F5F5;
     padding: 1.5rem;
-    border-radius: 8px;
-    border-left: 4px solid #ffc107;
+    border: 1px solid #000;
+    border-left: 8px solid #000;
   }
 
   .info-box h3 {
     margin-top: 0;
-    color: #856404;
+    color: #000;
   }
 
   .info-box ul {
     margin: 0;
     padding-left: 1.5rem;
-    color: #856404;
+    color: #525252;
   }
 
   .info-box li {

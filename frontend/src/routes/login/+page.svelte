@@ -1,17 +1,23 @@
 <script lang="ts">
-  export let params: any = undefined; // SvelteKit passes this automatically
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { browser } from '$app/environment';
   import { authStore } from '$lib/stores/auth';
+  import ThreeAuthBackground from '$lib/components/three/ThreeAuthBackground.svelte';
 
-  let email = '';
-  let password = '';
-  let submitting = false;
-  let error = '';
+  let email = $state('');
+  let password = $state('');
+  let submitting = $state(false);
+  let error = $state('');
 
-  // Get redirect URL from query params
-  const redirectUrl = $page.url.searchParams.get('redirect') || '/';
+  // Get redirect URL from query params - only allow relative paths to prevent open redirect
+  function getSafeRedirect(url: string | null): string {
+    if (!url) return '/';
+    // Only allow paths starting with / and not // (protocol-relative URLs)
+    if (url.startsWith('/') && !url.startsWith('//')) return url;
+    return '/';
+  }
+  const redirectUrl = getSafeRedirect(page.url.searchParams.get('redirect'));
 
   async function handleLogin(e: Event) {
     e.preventDefault();
@@ -64,8 +70,9 @@
   <title>Login - Marketplace Platform</title>
 </svelte:head>
 
-<div class="login-page">
-  <div class="login-container">
+<div class="login-page" style="position: relative; overflow: hidden;">
+  <ThreeAuthBackground />
+  <div class="login-container" style="position: relative; z-index: 1;">
     <h1>Login</h1>
     <p class="subtitle">Access your marketplace account</p>
 
@@ -75,7 +82,7 @@
       </div>
     {/if}
 
-    <form on:submit={handleLogin}>
+    <form onsubmit={handleLogin}>
       <div class="form-group">
         <label for="email">Email Address</label>
         <input
@@ -125,8 +132,7 @@
     width: 100%;
     background-color: white;
     padding: 3rem;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border: 2px solid #000;
   }
 
   h1 {
@@ -142,10 +148,10 @@
   }
 
   .error-message {
-    background-color: #ef4444;
-    color: white;
+    background-color: #fff;
+    color: #000;
+    border: 4px solid #000;
     padding: 1rem;
-    border-radius: 4px;
     margin-bottom: 1.5rem;
   }
 
@@ -164,15 +170,16 @@
     width: 100%;
     padding: 0.75rem;
     font-size: 1rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    border: 1px solid #000;
     font-family: inherit;
   }
 
   input:focus {
     outline: none;
-    border-color: #0066cc;
-    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+    border-color: #000;
+    border-width: 4px;
+    box-shadow: none;
+    padding: calc(0.75rem - 3px);
   }
 
   input:disabled {
@@ -184,20 +191,25 @@
     width: 100%;
     padding: 1rem;
     font-size: 1.1rem;
-    background-color: #0066cc;
+    background-color: #000;
     color: white;
-    border: none;
-    border-radius: 4px;
+    border: 2px solid #000;
     cursor: pointer;
     margin-top: 1rem;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   button:hover:not(:disabled) {
-    background-color: #0052a3;
+    background-color: #fff;
+    color: #000;
   }
 
   button:disabled {
-    background-color: #ccc;
+    background-color: #E5E5E5;
+    border-color: #E5E5E5;
+    color: #525252;
     cursor: not-allowed;
   }
 
@@ -208,8 +220,8 @@
   }
 
   .additional-info a {
-    color: #0066cc;
-    text-decoration: none;
+    color: #000;
+    text-decoration: underline;
   }
 
   .additional-info a:hover {

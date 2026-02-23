@@ -111,7 +111,7 @@ function broadcastRedisStatus(connected: boolean) {
 
 // SSE endpoint for product updates (bids)
 app.get('/events/products/:productId', (req: Request, res: Response) => {
-  const { productId } = req.params;
+  const productId = req.params.productId as string;
   const origin = req.headers.origin;
 
   // Set CORS headers for SSE
@@ -171,7 +171,7 @@ app.get('/events/products/:productId', (req: Request, res: Response) => {
 
 // SSE endpoint for user updates (messages)
 app.get('/events/users/:userId', (req: Request, res: Response) => {
-  const { userId } = req.params;
+  const userId = req.params.userId as string;
   const origin = req.headers.origin;
 
   // Set CORS headers for SSE

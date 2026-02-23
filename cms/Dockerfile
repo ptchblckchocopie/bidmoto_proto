@@ -1,5 +1,5 @@
 # Backend Dockerfile for PayloadCMS
-FROM node:18-alpine
+FROM node:22-alpine
 
 # Set working directory
 WORKDIR /app
@@ -36,5 +36,5 @@ ENV NODE_ENV=production
 # Expose port (Railway uses PORT env var, defaults to 3001)
 EXPOSE 3001
 
-# Start the application in production mode (includes migration run)
-CMD ["npm", "start"]
+# Start with migrations then server
+CMD ["sh", "-c", "npm run migrate && npm start"]

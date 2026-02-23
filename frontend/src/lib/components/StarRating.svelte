@@ -1,21 +1,28 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  let {
+    rating = $bindable(0),
+    maxRating = 5,
+    interactive = false,
+    size = 'medium',
+    showValue = false,
+    disabled = false,
+    onchange
+  }: {
+    rating?: number;
+    maxRating?: number;
+    interactive?: boolean;
+    size?: 'small' | 'medium' | 'large';
+    showValue?: boolean;
+    disabled?: boolean;
+    onchange?: (detail: { rating: number }) => void;
+  } = $props();
 
-  export let rating: number = 0;
-  export let maxRating: number = 5;
-  export let interactive: boolean = false;
-  export let size: 'small' | 'medium' | 'large' = 'medium';
-  export let showValue: boolean = false;
-  export let disabled: boolean = false;
-
-  const dispatch = createEventDispatcher();
-
-  let hoverRating: number = 0;
+  let hoverRating: number = $state(0);
 
   function handleClick(value: number) {
     if (!interactive || disabled) return;
     rating = value;
-    dispatch('change', { rating: value });
+    onchange?.({ rating: value });
   }
 
   function handleMouseEnter(value: number) {
@@ -36,8 +43,8 @@
     }
   }
 
-  $: displayRating = hoverRating || rating;
-  $: sizeClass = `size-${size}`;
+  let displayRating = $derived(hoverRating || rating);
+  let sizeClass = $derived(`size-${size}`);
 </script>
 
 <div class="star-rating {sizeClass}" class:interactive class:disabled role={interactive ? 'radiogroup' : 'img'} aria-label={`Rating: ${rating} out of ${maxRating} stars`}>
@@ -52,10 +59,10 @@
         class="star"
         class:filled
         class:half-filled={halfFilled}
-        on:click={() => handleClick(value)}
-        on:mouseenter={() => handleMouseEnter(value)}
-        on:mouseleave={handleMouseLeave}
-        on:keydown={(e) => handleKeyDown(e, value)}
+        onclick={() => handleClick(value)}
+        onmouseenter={() => handleMouseEnter(value)}
+        onmouseleave={handleMouseLeave}
+        onkeydown={(e) => handleKeyDown(e, value)}
         aria-label={`${value} star${value !== 1 ? 's' : ''}`}
         aria-pressed={rating === value}
         {disabled}
@@ -112,20 +119,20 @@
   }
 
   .star svg {
-    fill: #e0e0e0;
+    fill: #E5E5E5;
     stroke: #ccc;
     stroke-width: 1;
     transition: fill 0.15s ease, stroke 0.15s ease;
   }
 
   .star.filled svg {
-    fill: #fbbf24;
-    stroke: #f59e0b;
+    fill: #000;
+    stroke: #000;
   }
 
   .star.half-filled svg {
     fill: url(#half-fill);
-    stroke: #f59e0b;
+    stroke: #000;
   }
 
   /* Size variants */
@@ -168,7 +175,7 @@
   }
 
   .star-rating.interactive .star:focus-visible {
-    outline: 2px solid #f59e0b;
+    outline: 2px solid #000;
     outline-offset: 2px;
     border-radius: 2px;
   }

@@ -2,7 +2,7 @@
   import type { PageData } from './$types';
   import { type Product } from '$lib/api';
   import { fetchMyPurchases } from '$lib/api';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
@@ -10,33 +10,32 @@
   import ImageSlider from '$lib/components/ImageSlider.svelte';
   import ProductForm from '$lib/components/ProductForm.svelte';
 
-  export let data: PageData;
-  export let params: any = undefined; // SvelteKit passes this automatically
+  let { data } = $props<{ data: PageData }>();
 
   // Tab management
   type TabType = 'products' | 'purchases';
-  let activeTab: TabType = 'products';
+  let activeTab: TabType = $state('products');
 
   // Separate products by status and visibility
-  $: activeProducts = data.activeProducts;
-  $: hiddenProducts = data.hiddenProducts;
-  $: endedProducts = data.endedProducts;
+  let activeProducts = $derived(data.activeProducts);
+  let hiddenProducts = $derived(data.hiddenProducts);
+  let endedProducts = $derived(data.endedProducts);
 
   // Purchases state
-  let purchases: Product[] = [];
-  let purchasesLoading = false;
-  let purchasesError = '';
+  let purchases: Product[] = $state([]);
+  let purchasesLoading = $state(false);
+  let purchasesError = $state('');
 
   // Modal states
-  let showEditModal = false;
-  let showViewModal = false;
-  let editingProduct: Product | null = null;
-  let viewingProduct: Product | null = null;
-  let showProductModal = false;
-  let selectedProduct: Product | null = null;
+  let showEditModal = $state(false);
+  let showViewModal = $state(false);
+  let editingProduct: Product | null = $state(null);
+  let viewingProduct: Product | null = $state(null);
+  let showProductModal = $state(false);
+  let selectedProduct: Product | null = $state(null);
 
   // Product view state
-  let productTab: 'active' | 'hidden' | 'ended' = 'active';
+  let productTab: 'active' | 'hidden' | 'ended' = $state('active');
 
   // Currency symbols
   const currencySymbols: Record<string, string> = {
@@ -128,8 +127,8 @@
       // If active status changed, move product between arrays
       if (wasActive !== isActive) {
         // Remove from current array
-        data.activeProducts = data.activeProducts.filter(p => p.id !== productId);
-        data.hiddenProducts = data.hiddenProducts.filter(p => p.id !== productId);
+        data.activeProducts = data.activeProducts.filter((p: any) => p.id !== productId);
+        data.hiddenProducts = data.hiddenProducts.filter((p: any) => p.id !== productId);
 
         // Add to correct array
         if (isActive) {
@@ -206,7 +205,7 @@
     if (!browser) return;
 
     // Check URL parameter first
-    const urlTab = $page.url.searchParams.get('tab');
+    const urlTab = page.url.searchParams.get('tab');
     if (urlTab === 'products' || urlTab === 'purchases') {
       activeTab = urlTab;
     } else {
@@ -244,7 +243,7 @@
     <button
       class="main-tab"
       class:active={activeTab === 'products'}
-      on:click={() => switchTab('products')}
+      onclick={() => switchTab('products')}
     >
       <span class="tab-icon">📦</span>
       <span class="tab-label">My Products</span>
@@ -252,7 +251,7 @@
     <button
       class="main-tab"
       class:active={activeTab === 'purchases'}
-      on:click={() => switchTab('purchases')}
+      onclick={() => switchTab('purchases')}
     >
       <span class="tab-icon">🛍️</span>
       <span class="tab-label">My Purchases</span>
@@ -269,21 +268,21 @@
           <button
             class="sub-tab"
             class:active={productTab === 'active'}
-            on:click={() => productTab = 'active'}
+            onclick={() => productTab = 'active'}
           >
             Active ({activeProducts.length})
           </button>
           <button
             class="sub-tab"
             class:active={productTab === 'hidden'}
-            on:click={() => productTab = 'hidden'}
+            onclick={() => productTab = 'hidden'}
           >
             Hidden ({hiddenProducts.length})
           </button>
           <button
             class="sub-tab"
             class:active={productTab === 'ended'}
-            on:click={() => productTab = 'ended'}
+            onclick={() => productTab = 'ended'}
           >
             Ended ({endedProducts.length})
           </button>
@@ -302,9 +301,9 @@
             <div class="products-grid">
               {#each activeProducts as product}
                 <div class="product-card">
-                  <div class="product-image" on:click={() => openViewModal(product)} role="button" tabindex="0">
+                  <div class="product-image" onclick={() => openViewModal(product)} role="button" tabindex="0">
                     {#if product.images && product.images.length > 0}
-                      {@const validImages = product.images.filter(img => img && img.image && img.image.url)}
+                      {@const validImages = product.images.filter((img: any) => img && img.image && img.image.url)}
                       {#if validImages.length > 0}
                         {@const firstImage = validImages[0]}
                         <img src={firstImage.image.url} alt={product.title} />
@@ -343,10 +342,10 @@
                   </div>
 
                   <div class="product-actions">
-                    <button class="btn-edit" on:click={() => openEditModal(product)}>
+                    <button class="btn-edit" onclick={() => openEditModal(product)}>
                       ✏️ Edit
                     </button>
-                    <button class="btn-view" on:click={() => openViewModal(product)}>
+                    <button class="btn-view" onclick={() => openViewModal(product)}>
                       👁️ View
                     </button>
                   </div>
@@ -365,9 +364,9 @@
             <div class="products-grid">
               {#each hiddenProducts as product}
                 <div class="product-card">
-                  <div class="product-image" on:click={() => openViewModal(product)} role="button" tabindex="0">
+                  <div class="product-image" onclick={() => openViewModal(product)} role="button" tabindex="0">
                     {#if product.images && product.images.length > 0}
-                      {@const validImages = product.images.filter(img => img && img.image && img.image.url)}
+                      {@const validImages = product.images.filter((img: any) => img && img.image && img.image.url)}
                       {#if validImages.length > 0}
                         {@const firstImage = validImages[0]}
                         <img src={firstImage.image.url} alt={product.title} />
@@ -404,10 +403,10 @@
                   </div>
 
                   <div class="product-actions">
-                    <button class="btn-edit" on:click={() => openEditModal(product)}>
+                    <button class="btn-edit" onclick={() => openEditModal(product)}>
                       ✏️ Edit
                     </button>
-                    <button class="btn-view" on:click={() => openViewModal(product)}>
+                    <button class="btn-view" onclick={() => openViewModal(product)}>
                       👁️ View
                     </button>
                   </div>
@@ -426,9 +425,9 @@
             <div class="products-grid">
               {#each endedProducts as product}
                 <div class="product-card">
-                  <div class="product-image" on:click={() => openViewModal(product)} role="button" tabindex="0">
+                  <div class="product-image" onclick={() => openViewModal(product)} role="button" tabindex="0">
                     {#if product.images && product.images.length > 0}
-                      {@const validImages = product.images.filter(img => img && img.image && img.image.url)}
+                      {@const validImages = product.images.filter((img: any) => img && img.image && img.image.url)}
                       {#if validImages.length > 0}
                         {@const firstImage = validImages[0]}
                         <img src={firstImage.image.url} alt={product.title} />
@@ -459,7 +458,7 @@
                   </div>
 
                   <div class="product-actions">
-                    <button class="btn-view" on:click={() => openViewModal(product)}>
+                    <button class="btn-view" onclick={() => openViewModal(product)}>
                       👁️ View
                     </button>
                   </div>
@@ -487,9 +486,9 @@
           <div class="purchases-list">
             {#each purchases as product}
               <div class="purchase-card">
-                <div class="purchase-image" on:click={() => openProductModal(product)} role="button" tabindex="0">
+                <div class="purchase-image" onclick={() => openProductModal(product)} role="button" tabindex="0">
                   {#if product.images && product.images.length > 0}
-                    {@const validImages = product.images.filter(img => img && img.image && img.image.url)}
+                    {@const validImages = product.images.filter((img: any) => img && img.image && img.image.url)}
                     {#if validImages.length > 0}
                       {@const firstImage = validImages[0]}
                       <img src={firstImage.image.url} alt={product.title} />
@@ -506,7 +505,7 @@
                 </div>
 
                 <div class="purchase-content">
-                  <div class="purchase-info" on:click={() => openProductModal(product)} role="button" tabindex="0">
+                  <div class="purchase-info" onclick={() => openProductModal(product)} role="button" tabindex="0">
                     <h3>{product.title}</h3>
                     <div class="purchase-price-tag">
                       {formatPrice(product.currentBid || product.startingPrice, product.seller.currency)}
@@ -545,9 +544,9 @@
 
 <!-- Edit Product Modal -->
 {#if showEditModal && editingProduct}
-  <div class="modal-overlay" on:keydown={(e) => e.key === 'Escape' && closeEditModal()} role="button" tabindex="-1">
-    <div class="modal-content" on:keydown|stopPropagation role="dialog" tabindex="-1">
-      <button class="modal-close" on:click={closeEditModal}>&times;</button>
+  <div class="modal-overlay" onkeydown={(e) => e.key === 'Escape' && closeEditModal()} role="button" tabindex="-1">
+    <div class="modal-content" onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1">
+      <button class="modal-close" onclick={closeEditModal}>&times;</button>
 
       <div class="modal-header">
         <h2>Edit Product</h2>
@@ -567,9 +566,9 @@
 
 <!-- Product View Modal -->
 {#if showViewModal && viewingProduct}
-  <div class="modal-overlay" on:click={closeViewModal} on:keydown={(e) => e.key === 'Escape' && closeViewModal()} role="button" tabindex="-1">
-    <div class="modal-content" on:click|stopPropagation on:keydown|stopPropagation role="dialog" tabindex="-1">
-      <button class="modal-close" on:click={closeViewModal}>&times;</button>
+  <div class="modal-overlay" onclick={closeViewModal} onkeydown={(e) => e.key === 'Escape' && closeViewModal()} role="button" tabindex="-1">
+    <div class="modal-content" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1">
+      <button class="modal-close" onclick={closeViewModal}>&times;</button>
 
       <div class="modal-body">
         {#if viewingProduct.images && viewingProduct.images.length > 0}
@@ -625,9 +624,9 @@
 
 <!-- Purchase Product Modal -->
 {#if showProductModal && selectedProduct}
-  <div class="modal-overlay" on:click={closeProductModal} on:keydown={(e) => e.key === 'Escape' && closeProductModal()} role="button" tabindex="-1">
-    <div class="modal-content" on:click|stopPropagation on:keydown|stopPropagation role="dialog" tabindex="-1">
-      <button class="modal-close" on:click={closeProductModal}>&times;</button>
+  <div class="modal-overlay" onclick={closeProductModal} onkeydown={(e) => e.key === 'Escape' && closeProductModal()} role="button" tabindex="-1">
+    <div class="modal-content" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" tabindex="-1">
+      <button class="modal-close" onclick={closeProductModal}>&times;</button>
 
       <div class="modal-body">
         {#if selectedProduct.images && selectedProduct.images.length > 0}
@@ -687,20 +686,22 @@
   .page-header h1 {
     font-size: 2.5rem;
     font-weight: 700;
-    color: #1f2937;
+    color: #000;
     margin-bottom: 0.5rem;
+    font-family: 'Playfair Display', serif;
   }
 
   .subtitle {
-    color: #6b7280;
+    color: #525252;
     font-size: 1.125rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   /* Main Tabs */
   .main-tabs {
     display: flex;
     gap: 0.5rem;
-    border-bottom: 2px solid #e5e7eb;
+    border-bottom: 2px solid #E5E5E5;
     margin-bottom: 2rem;
   }
 
@@ -711,24 +712,27 @@
     padding: 1rem 2rem;
     background: transparent;
     border: none;
-    border-bottom: 3px solid transparent;
-    color: #6b7280;
-    font-size: 1.125rem;
+    border-bottom: 4px solid transparent;
+    color: #525252;
+    font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
     margin-bottom: -2px;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .main-tab:hover {
-    color: #dc2626;
-    background: rgba(220, 38, 38, 0.05);
+    color: #000;
+    background: transparent;
   }
 
   .main-tab.active {
-    color: #dc2626;
-    border-bottom-color: #dc2626;
-    background: rgba(220, 38, 38, 0.05);
+    color: #000;
+    border-bottom-color: #000;
+    background: transparent;
   }
 
   .tab-icon {
@@ -740,29 +744,32 @@
     display: flex;
     gap: 0.5rem;
     margin-bottom: 1.5rem;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid #E5E5E5;
   }
 
   .sub-tab {
     padding: 0.75rem 1.5rem;
     background: transparent;
     border: none;
-    border-bottom: 2px solid transparent;
-    color: #6b7280;
-    font-size: 1rem;
+    border-bottom: 4px solid transparent;
+    color: #525252;
+    font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
     margin-bottom: -1px;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .sub-tab:hover {
-    color: #dc2626;
+    color: #000;
   }
 
   .sub-tab.active {
-    color: #dc2626;
-    border-bottom-color: #dc2626;
+    color: #000;
+    border-bottom-color: #000;
   }
 
   /* Tab Content */
@@ -789,16 +796,14 @@
   }
 
   .product-card {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    background: #fff;
+    border: 1px solid #000;
     overflow: hidden;
     transition: all 0.3s ease;
   }
 
   .product-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    transform: translateY(-4px);
+    border-width: 2px;
   }
 
   .product-image {
@@ -806,7 +811,7 @@
     height: 200px;
     overflow: hidden;
     cursor: pointer;
-    background: #f3f4f6;
+    background: #F5F5F5;
   }
 
   .product-image img {
@@ -821,7 +826,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+    background: #F5F5F5;
   }
 
   .placeholder-icon {
@@ -837,12 +842,13 @@
     font-size: 1.125rem;
     font-weight: 600;
     margin-bottom: 0.75rem;
-    color: #1f2937;
+    color: #000;
     overflow: hidden;
     text-overflow: ellipsis;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+    font-family: 'Playfair Display', serif;
   }
 
   .product-price {
@@ -858,22 +864,24 @@
 
   .price-label {
     font-size: 0.875rem;
-    color: #6b7280;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .price-value {
     font-size: 1.125rem;
     font-weight: 700;
-    color: #1f2937;
+    color: #000;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .price-value.sold,
   .price-value.won {
-    color: #059669;
+    color: #000;
   }
 
   .current-bid .price-value {
-    color: #dc2626;
+    color: #000;
   }
 
   .product-meta {
@@ -881,81 +889,91 @@
     justify-content: space-between;
     align-items: center;
     padding-top: 0.75rem;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid #E5E5E5;
   }
 
   .meta-item {
     font-size: 0.875rem;
-    color: #6b7280;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .status-badge {
     padding: 0.25rem 0.75rem;
-    border-radius: 12px;
     font-size: 0.75rem;
     font-weight: 600;
     text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.05em;
   }
 
   .status-active {
-    background: #dcfce7;
-    color: #166534;
+    background: #000;
+    color: #fff;
   }
 
   .status-sold {
-    background: #dbeafe;
-    color: #1e40af;
+    background: #000;
+    color: #fff;
   }
 
   .status-ended {
-    background: #fee2e2;
-    color: #991b1b;
+    background: #fff;
+    color: #000;
+    border: 2px solid #000;
   }
 
   .status-hidden {
-    background: #f3f4f6;
-    color: #6b7280;
+    background: #fff;
+    color: #525252;
+    border: 1px dashed #000;
   }
 
   .status-cancelled {
-    background: #fef3c7;
-    color: #92400e;
+    background: #fff;
+    color: #525252;
+    border: 1px solid #525252;
   }
 
   .product-actions {
     display: flex;
     gap: 0.5rem;
     padding: 1rem 1.25rem;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid #E5E5E5;
   }
 
   .btn-edit,
   .btn-view {
     flex: 1;
     padding: 0.625rem 1rem;
-    border-radius: 6px;
-    border: none;
+    border: 2px solid #000;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.8rem;
   }
 
   .btn-edit {
-    background: #fef3c7;
-    color: #92400e;
+    background: #000;
+    color: #fff;
   }
 
   .btn-edit:hover {
-    background: #fde68a;
+    background: #fff;
+    color: #000;
   }
 
   .btn-view {
-    background: #dbeafe;
-    color: #1e40af;
+    background: transparent;
+    color: #000;
   }
 
   .btn-view:hover {
-    background: #bfdbfe;
+    background: #000;
+    color: #fff;
   }
 
   /* Purchases List */
@@ -966,17 +984,14 @@
 
   .purchase-card {
     display: flex;
-    background: white;
-    border-radius: 16px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    background: #fff;
     overflow: hidden;
     transition: all 0.3s ease;
-    border: 1px solid #e5e7eb;
+    border: 1px solid #000;
   }
 
   .purchase-card:hover {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-    transform: translateY(-2px);
+    border-width: 2px;
   }
 
   .purchase-image {
@@ -984,7 +999,7 @@
     height: 200px;
     flex-shrink: 0;
     overflow: hidden;
-    background: #f3f4f6;
+    background: #F5F5F5;
     cursor: pointer;
     position: relative;
   }
@@ -993,7 +1008,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(to right, transparent 80%, rgba(0,0,0,0.02));
+    background: transparent;
   }
 
   .purchase-image img {
@@ -1023,20 +1038,22 @@
   .purchase-info h3 {
     font-size: 1.25rem;
     font-weight: 700;
-    color: #1f2937;
+    color: #000;
     margin-bottom: 0.5rem;
     overflow: hidden;
     text-overflow: ellipsis;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+    font-family: 'Playfair Display', serif;
   }
 
   .purchase-price-tag {
     font-size: 1.5rem;
     font-weight: 800;
-    color: #059669;
+    color: #000;
     margin-bottom: 0.75rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .purchase-meta-row {
@@ -1049,20 +1066,22 @@
 
   .purchase-date {
     font-size: 0.875rem;
-    color: #6b7280;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .purchase-seller {
     font-size: 0.875rem;
-    color: #6b7280;
+    color: #525252;
     margin-bottom: 1rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   .purchase-actions {
     display: flex;
     gap: 0.75rem;
     padding-top: 1rem;
-    border-top: 1px solid #f3f4f6;
+    border-top: 1px solid #E5E5E5;
     margin-top: auto;
   }
 
@@ -1072,19 +1091,22 @@
     justify-content: center;
     gap: 0.5rem;
     padding: 0.75rem 1.25rem;
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-    color: white;
-    border-radius: 8px;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
     font-weight: 600;
     font-size: 0.9rem;
     text-decoration: none;
     transition: all 0.2s;
     flex: 1;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .btn-message:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    background: #fff;
+    color: #000;
   }
 
   .btn-icon {
@@ -1098,20 +1120,22 @@
     align-items: center;
     justify-content: center;
     padding: 0.75rem 1.25rem;
-    background: white;
-    color: #374151;
-    border: 2px solid #e5e7eb;
-    border-radius: 8px;
+    background: transparent;
+    color: #000;
+    border: 2px solid #000;
     font-weight: 600;
     font-size: 0.9rem;
     text-decoration: none;
     transition: all 0.2s;
     flex: 1;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .btn-view-product:hover {
-    background: #f9fafb;
-    border-color: #d1d5db;
+    background: #000;
+    color: #fff;
   }
 
   /* Tablet styles for purchases */
@@ -1146,30 +1170,35 @@
   .empty-state h2 {
     font-size: 1.75rem;
     font-weight: 600;
-    color: #1f2937;
+    color: #000;
     margin-bottom: 0.5rem;
+    font-family: 'Playfair Display', serif;
   }
 
   .empty-state p {
-    color: #6b7280;
+    color: #525252;
     font-size: 1.125rem;
     margin-bottom: 2rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   .btn-primary {
     display: inline-block;
     padding: 0.75rem 2rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border-radius: 8px;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
     font-weight: 600;
     text-decoration: none;
     transition: all 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+    background: #fff;
+    color: #000;
   }
 
   /* Loading & Error */
@@ -1177,16 +1206,18 @@
     text-align: center;
     padding: 3rem;
     font-size: 1.125rem;
-    color: #6b7280;
+    color: #525252;
+    font-family: 'Source Serif 4', serif;
   }
 
   .error-message {
     text-align: center;
     padding: 2rem;
-    background: #fee2e2;
-    color: #991b1b;
-    border-radius: 8px;
+    background: #fff;
+    color: #000;
+    border: 4px solid #000;
     font-weight: 500;
+    font-family: 'Source Serif 4', serif;
   }
 
   /* Modal Styles */
@@ -1205,13 +1236,12 @@
   }
 
   .modal-content {
-    background: white;
-    border-radius: 12px;
+    background: #fff;
+    border: 4px solid #000;
     max-width: 90%;
     max-height: 90vh;
     overflow-y: auto;
     position: relative;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   }
 
   .modal-close {
@@ -1220,9 +1250,8 @@
     right: 1rem;
     width: 40px;
     height: 40px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.9);
-    border: none;
+    background: #fff;
+    border: 2px solid #000;
     font-size: 1.5rem;
     cursor: pointer;
     display: flex;
@@ -1230,23 +1259,23 @@
     justify-content: center;
     z-index: 10;
     transition: all 0.2s;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   }
 
   .modal-close:hover {
-    background: white;
-    transform: scale(1.1);
+    background: #000;
+    color: #fff;
   }
 
   .modal-header {
     padding: 2rem 2rem 1rem;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid #E5E5E5;
   }
 
   .modal-header h2 {
     font-size: 1.75rem;
     font-weight: 600;
-    color: #1f2937;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .modal-body {
@@ -1263,8 +1292,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
-    border-radius: 12px;
+    background: #F5F5F5;
     margin-bottom: 2rem;
   }
 
@@ -1275,14 +1303,16 @@
   .modal-info h2 {
     font-size: 1.75rem;
     font-weight: 700;
-    color: #1f2937;
+    color: #000;
     margin-bottom: 1rem;
+    font-family: 'Playfair Display', serif;
   }
 
   .product-description {
-    color: #4b5563;
+    color: #525252;
     line-height: 1.6;
     margin-bottom: 2rem;
+    font-family: 'Source Serif 4', serif;
   }
 
   .info-grid {
@@ -1300,35 +1330,43 @@
 
   .info-label {
     font-size: 0.875rem;
-    color: #6b7280;
+    color: #525252;
     font-weight: 500;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .info-value {
     font-size: 1.125rem;
-    color: #1f2937;
+    color: #000;
     font-weight: 600;
+    font-family: 'Source Serif 4', serif;
   }
 
   .info-value.won {
-    color: #059669;
+    color: #000;
     font-size: 1.5rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .btn-view-full {
     display: inline-block;
     padding: 0.75rem 2rem;
-    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
-    color: white;
-    border-radius: 8px;
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
     font-weight: 600;
     text-decoration: none;
     transition: all 0.2s;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .btn-view-full:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+    background: #fff;
+    color: #000;
   }
 
   /* Responsive */
@@ -1339,15 +1377,15 @@
     }
 
     .main-tab {
-      border-bottom: 1px solid #e5e7eb;
-      border-left: 3px solid transparent;
+      border-bottom: 1px solid #E5E5E5;
+      border-left: 4px solid transparent;
       margin-bottom: 0;
       margin-left: -2px;
     }
 
     .main-tab.active {
-      border-left-color: #dc2626;
-      border-bottom-color: #e5e7eb;
+      border-left-color: #000;
+      border-bottom-color: #E5E5E5;
     }
 
     .products-grid {

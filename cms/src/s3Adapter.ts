@@ -70,7 +70,7 @@ export const s3Adapter = ({
 
       async staticHandler({ params }) {
         try {
-          const fileKey = path.posix.join(prefix || '', params.filename);
+          const fileKey = path.posix.join(prefix || '', params.filename as string);
 
           const command = new GetObjectCommand({
             Bucket: bucket,

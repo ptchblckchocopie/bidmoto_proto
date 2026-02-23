@@ -3,7 +3,7 @@
   import StarRating from '$lib/components/StarRating.svelte';
   import type { Rating } from '$lib/api';
 
-  export let data: PageData;
+  let { data } = $props<{ data: PageData }>();
 
   // Format date helper
   function formatDate(dateString: string): string {
@@ -71,11 +71,11 @@
   }
 
   // Active tab
-  let activeTab: 'listings' | 'reviews' = 'listings';
+  let activeTab: 'listings' | 'reviews' = $state('listings');
 
   // Separate ratings by role
-  $: ratingsAsSeller = data.ratings.filter(r => r.raterRole === 'buyer'); // Buyers rate sellers
-  $: ratingsAsBuyer = data.ratings.filter(r => r.raterRole === 'seller'); // Sellers rate buyers
+  let ratingsAsSeller = $derived(data.ratings.filter((r: Rating) => r.raterRole === 'buyer')); // Buyers rate sellers
+  let ratingsAsBuyer = $derived(data.ratings.filter((r: Rating) => r.raterRole === 'seller')); // Sellers rate buyers
 </script>
 
 <svelte:head>
@@ -128,14 +128,14 @@
       <button
         class="tab-btn"
         class:active={activeTab === 'listings'}
-        on:click={() => activeTab = 'listings'}
+        onclick={() => activeTab = 'listings'}
       >
         Listings
       </button>
       <button
         class="tab-btn"
         class:active={activeTab === 'reviews'}
-        on:click={() => activeTab = 'reviews'}
+        onclick={() => activeTab = 'reviews'}
       >
         Reviews ({data.ratings.length})
       </button>
@@ -387,9 +387,8 @@
   }
 
   .profile-container {
-    background: white;
-    border-radius: 16px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    background: #FFF;
+    border: 2px solid #000;
     overflow: hidden;
   }
 
@@ -398,21 +397,22 @@
     display: flex;
     gap: 1.5rem;
     padding: 2rem;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    background: #000;
+    color: #FFF;
   }
 
   .profile-avatar {
     width: 100px;
     height: 100px;
     background: rgba(255, 255, 255, 0.2);
-    border-radius: 50%;
+    border: 4px solid #FFF;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 2.5rem;
     font-weight: 600;
     flex-shrink: 0;
+    font-family: 'Playfair Display', serif;
   }
 
   .profile-info {
@@ -422,12 +422,14 @@
   .profile-name {
     margin: 0 0 0.25rem 0;
     font-size: 1.75rem;
+    font-family: 'Playfair Display', serif;
   }
 
   .member-since {
     margin: 0 0 1rem 0;
     opacity: 0.9;
     font-size: 0.9rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .profile-stats {
@@ -452,11 +454,13 @@
   .stat-value {
     font-size: 1.25rem;
     font-weight: 600;
+    font-family: 'Playfair Display', serif;
   }
 
   .stat-label {
     font-size: 0.8rem;
     opacity: 0.9;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .stat-divider {
@@ -469,7 +473,7 @@
   /* Tabs */
   .profile-tabs {
     display: flex;
-    border-bottom: 1px solid #e9ecef;
+    border-bottom: 1px solid #E5E5E5;
   }
 
   .tab-btn {
@@ -477,22 +481,25 @@
     padding: 1rem;
     background: none;
     border: none;
-    font-size: 1rem;
+    font-size: 0.85rem;
     font-weight: 500;
-    color: #666;
+    color: #525252;
     cursor: pointer;
-    border-bottom: 3px solid transparent;
+    border-bottom: 4px solid transparent;
     transition: all 0.2s ease;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   .tab-btn:hover {
-    color: #333;
-    background: #f8f9fa;
+    color: #000;
+    background: #F5F5F5;
   }
 
   .tab-btn.active {
-    color: #667eea;
-    border-bottom-color: #667eea;
+    color: #000;
+    border-bottom-color: #000;
   }
 
   /* Tab Content */
@@ -508,7 +515,8 @@
   .listings-section h2 {
     margin: 0 0 1rem 0;
     font-size: 1.25rem;
-    color: #333;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .products-grid {
@@ -518,17 +526,16 @@
   }
 
   .product-card {
-    background: #f8f9fa;
-    border-radius: 12px;
+    background: #FFF;
+    border: 1px solid #000;
     overflow: hidden;
     text-decoration: none;
     color: inherit;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.2s;
   }
 
   .product-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    background: #F5F5F5;
   }
 
   .product-card.sold {
@@ -538,7 +545,7 @@
   .product-image {
     position: relative;
     aspect-ratio: 4/3;
-    background: #e9ecef;
+    background: #F5F5F5;
   }
 
   .product-image img {
@@ -552,8 +559,9 @@
     align-items: center;
     justify-content: center;
     height: 100%;
-    color: #999;
+    color: #525252;
     font-size: 0.9rem;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .status-badge {
@@ -561,20 +569,21 @@
     top: 0.5rem;
     right: 0.5rem;
     padding: 0.25rem 0.5rem;
-    border-radius: 4px;
     font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.05em;
   }
 
   .status-badge.available {
-    background: #10b981;
-    color: white;
+    background: #000;
+    color: #FFF;
   }
 
   .status-badge.sold {
-    background: #6b7280;
-    color: white;
+    background: #525252;
+    color: #FFF;
   }
 
   .product-info {
@@ -585,10 +594,11 @@
     margin: 0 0 0.5rem 0;
     font-size: 0.9rem;
     font-weight: 600;
-    color: #333;
+    color: #000;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    font-family: 'Source Serif 4', serif;
   }
 
   .product-price {
@@ -599,12 +609,14 @@
 
   .current-bid, .starting-price, .sold-price {
     font-weight: 600;
-    color: #333;
+    color: #000;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .bid-label {
     font-size: 0.75rem;
-    color: #666;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   /* Reviews */
@@ -618,21 +630,23 @@
     gap: 0.75rem;
     margin-bottom: 1rem;
     padding-bottom: 0.75rem;
-    border-bottom: 2px solid #e9ecef;
+    border-bottom: 2px solid #000;
   }
 
   .reviews-section-header h2 {
     margin: 0;
     font-size: 1.25rem;
-    color: #333;
+    color: #000;
+    font-family: 'Playfair Display', serif;
   }
 
   .reviews-count {
     font-size: 0.85rem;
-    color: #666;
-    background: #e9ecef;
+    color: #525252;
+    background: #F5F5F5;
     padding: 0.25rem 0.5rem;
-    border-radius: 12px;
+    border: 1px solid #E5E5E5;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .reviews-list {
@@ -644,8 +658,8 @@
   .review-card {
     display: flex;
     gap: 1rem;
-    background: #f8f9fa;
-    border-radius: 12px;
+    background: #FFF;
+    border: 1px solid #000;
     padding: 1rem;
     align-items: flex-start;
   }
@@ -654,11 +668,11 @@
   .review-product-image {
     width: 100px;
     height: 100px;
-    border-radius: 8px;
     overflow: hidden;
-    background: #e9ecef;
+    background: #F5F5F5;
     flex-shrink: 0;
     display: block;
+    border: 1px solid #E5E5E5;
   }
 
   .review-product-image img {
@@ -680,7 +694,7 @@
 
   .no-image-thumb {
     font-size: 2rem;
-    color: #999;
+    color: #525252;
   }
 
   /* Review Details (Right) */
@@ -696,27 +710,29 @@
     gap: 0.5rem;
     margin-bottom: 0.75rem;
     padding-bottom: 0.75rem;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid #E5E5E5;
   }
 
   .product-title-link {
     font-weight: 600;
-    color: #333;
+    color: #000;
     font-size: 0.95rem;
     text-decoration: none;
-    transition: color 0.2s;
+    transition: all 0.2s;
+    font-family: 'Source Serif 4', serif;
   }
 
   .product-title-link:hover {
-    color: #667eea;
+    text-decoration: underline;
   }
 
   .transaction-role {
     font-size: 0.75rem;
-    color: #666;
-    background: #e9ecef;
+    color: #525252;
+    background: #F5F5F5;
     padding: 0.125rem 0.5rem;
-    border-radius: 4px;
+    border: 1px solid #E5E5E5;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .chat-link {
@@ -724,17 +740,21 @@
     align-items: center;
     gap: 0.25rem;
     padding: 0.25rem 0.5rem;
-    background: #667eea;
-    color: white;
-    border-radius: 4px;
+    background: #000;
+    color: #FFF;
     text-decoration: none;
     font-size: 0.75rem;
-    transition: background 0.2s;
+    transition: all 0.2s;
     margin-left: auto;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border: 1px solid #000;
   }
 
   .chat-link:hover {
-    background: #5a6fd6;
+    background: #FFF;
+    color: #000;
   }
 
   .review-header {
@@ -752,21 +772,26 @@
 
   .reviewer-name {
     font-weight: 600;
-    color: #333;
+    color: #000;
+    font-family: 'Source Serif 4', serif;
   }
 
   .reviewer-role {
     font-size: 0.75rem;
-    color: #666;
-    background: #e9ecef;
+    color: #525252;
+    background: #F5F5F5;
     padding: 0.125rem 0.375rem;
-    border-radius: 4px;
+    border: 1px solid #E5E5E5;
     width: fit-content;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .review-date {
     font-size: 0.8rem;
-    color: #666;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .review-rating {
@@ -778,20 +803,22 @@
 
   .rating-score {
     font-weight: 600;
-    color: #333;
+    color: #000;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   .review-comment {
     margin: 0;
     font-style: italic;
-    color: #555;
+    color: #525252;
     line-height: 1.5;
+    font-family: 'Source Serif 4', serif;
   }
 
   .follow-up-review {
     margin-top: 1rem;
     padding-top: 1rem;
-    border-top: 1px solid #e0e0e0;
+    border-top: 1px solid #E5E5E5;
   }
 
   .follow-up-header {
@@ -803,20 +830,25 @@
 
   .follow-up-label {
     font-weight: 600;
-    color: #667eea;
+    color: #000;
     font-size: 0.85rem;
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .follow-up-date {
     font-size: 0.75rem;
-    color: #666;
+    color: #525252;
+    font-family: 'JetBrains Mono', monospace;
   }
 
   /* Empty State */
   .empty-state {
     text-align: center;
     padding: 3rem 1rem;
-    color: #666;
+    color: #525252;
+    font-family: 'Source Serif 4', serif;
   }
 
   /* Responsive */

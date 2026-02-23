@@ -1,3 +1,224 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #000000;
+  --color-primary-dark: #000000;
+  --color-background: #ffffff;
+  --color-foreground: #000000;
+  --color-muted: #F5F5F5;
+  --color-muted-foreground: #525252;
+  --color-border: #000000;
+  --color-border-light: #E5E5E5;
+}
+
+/* ===== GLOBAL RESETS ===== */
+*, *::before, *::after {
+  border-radius: 0 !important;
+}
+
+/* ===== BASE TYPOGRAPHY ===== */
+body {
+  font-family: 'Source Serif 4', 'Georgia', serif;
+  color: #000000;
+  background-color: #ffffff;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 1px,
+    rgba(0, 0, 0, 0.015) 1px,
+    rgba(0, 0, 0, 0.015) 2px
+  );
+  background-size: 100% 4px;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Playfair Display', 'Georgia', serif;
+  font-weight: 700;
+  color: #000000;
+}
+
+/* ===== SHARED BUTTON CLASSES ===== */
+.btn-primary {
+  background-color: #000000;
+  color: #ffffff;
+  border: 2px solid #000000;
+  padding: 0.75rem 2rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+  text-decoration: none;
+  display: inline-block;
+  text-align: center;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #ffffff;
+  color: #000000;
+}
+
+.btn-primary:disabled {
+  background-color: #E5E5E5;
+  border-color: #E5E5E5;
+  color: #525252;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: #000000;
+  border: 2px solid #000000;
+  padding: 0.75rem 2rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+  text-decoration: none;
+  display: inline-block;
+  text-align: center;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: #000000;
+  color: #ffffff;
+}
+
+.btn-secondary:disabled {
+  border-color: #E5E5E5;
+  color: #525252;
+  cursor: not-allowed;
+}
+
+/* ===== SHARED CARD CLASS ===== */
+.card {
+  background-color: #ffffff;
+  border: 1px solid #000000;
+  box-shadow: none;
+}
+
+/* ===== SHARED INPUT CLASSES ===== */
+.input {
+  border: 1px solid #000000;
+  padding: 0.75rem;
+  font-size: 1rem;
+  font-family: 'Source Serif 4', serif;
+  background-color: #ffffff;
+  color: #000000;
+  transition: border-width 0.15s;
+  outline: none;
+}
+
+.input:focus {
+  border: 4px solid #000000;
+  padding: calc(0.75rem - 3px);
+  box-shadow: none;
+}
+
+.input-full {
+  width: 100%;
+  border: 1px solid #000000;
+  padding: 0.75rem;
+  font-size: 1rem;
+  font-family: 'Source Serif 4', serif;
+  background-color: #ffffff;
+  color: #000000;
+  transition: border-width 0.15s;
+  outline: none;
+}
+
+.input-full:focus {
+  border: 4px solid #000000;
+  padding: calc(0.75rem - 3px);
+  box-shadow: none;
+}
+
+/* ===== STATUS BADGES ===== */
+.badge-active {
+  display: inline-block;
+  background-color: #000000;
+  color: #ffffff;
+  padding: 0.25rem 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-sold {
+  display: inline-block;
+  background-color: #000000;
+  color: #ffffff;
+  padding: 0.25rem 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-ended {
+  display: inline-block;
+  background-color: #ffffff;
+  color: #000000;
+  border: 2px solid #000000;
+  padding: 0.25rem 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-cancelled {
+  display: inline-block;
+  background-color: #ffffff;
+  color: #525252;
+  border: 1px solid #525252;
+  padding: 0.25rem 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-hidden {
+  display: inline-block;
+  background-color: #ffffff;
+  color: #525252;
+  border: 1px dashed #000000;
+  padding: 0.25rem 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ===== DIVIDERS ===== */
+.divider-thin {
+  border: none;
+  border-top: 1px solid #000000;
+}
+
+.divider-medium {
+  border: none;
+  border-top: 2px solid #000000;
+}
+
+.divider-thick {
+  border: none;
+  border-top: 4px solid #000000;
+}
+
+.divider-ultra {
+  border: none;
+  border-top: 8px solid #000000;
+}

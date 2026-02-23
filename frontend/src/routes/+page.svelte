@@ -1,5 +1,4 @@
 <script lang="ts">
-  export let params: any = undefined; // SvelteKit passes this automatically
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
 
@@ -23,6 +22,7 @@
     justify-content: center;
     min-height: 60vh;
     font-size: 1.2rem;
-    color: #666;
+    color: #525252;
+    font-family: 'Source Serif 4', serif;
   }
 </style>
