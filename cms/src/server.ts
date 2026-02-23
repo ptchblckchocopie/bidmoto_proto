@@ -3,7 +3,7 @@ import payload from 'payload';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
-import { publishMessageNotification, publishTypingStatus } from './redis';
+import { publishMessageNotification, publishProductUpdate, publishTypingStatus } from './redis';
 import { queueEmail, sendVoidRequestEmail, sendVoidResponseEmail, sendAuctionRestartedEmail, sendSecondBidderOfferEmail } from './services/emailService';
 
 dotenv.config();
