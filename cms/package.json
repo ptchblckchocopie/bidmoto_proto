@@ -11,7 +11,7 @@
     "migrate": "payload migrate",
     "migrate:up": "payload migrate:up",
     "generate:types": "payload generate:types",
-    "vercel-build": "npx tsc --skipLibCheck && npx payload build"
+    "vercel-build": "./node_modules/.bin/tsc --skipLibCheck && ./node_modules/.bin/payload build"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.914.0",
