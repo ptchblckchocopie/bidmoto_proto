@@ -54,7 +54,7 @@ export default buildConfig({
   admin: {
     user: 'users',
     bundler: webpackBundler(),
-    disable: process.env.VERCEL === '1', // Disable admin UI on Vercel serverless
+    // Admin UI enabled on Vercel
     webpack: (config) => {
       // Provide browser-compatible fallbacks for Node.js built-in modules
       config.resolve = {
@@ -87,7 +87,7 @@ export default buildConfig({
       connectionString: process.env.DATABASE_URI || process.env.DATABASE_URL || 'postgresql://localhost:5432/marketplace',
     },
     migrationDir: path.resolve(__dirname, '../migrations'),
-    push: false, // Disable - use manual migrations
+    push: true, // Auto-create tables on fresh database
     ...(process.env.NODE_ENV === 'production' && {
       ssl: process.env.DATABASE_CA_CERT ? {
         rejectUnauthorized: true,
