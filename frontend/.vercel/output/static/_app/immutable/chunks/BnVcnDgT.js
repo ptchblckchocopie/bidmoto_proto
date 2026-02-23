@@ -1,0 +1,1 @@
+import{w as o}from"./Cl0DMWZv.js";function s(){const{subscribe:a,set:r,update:n}=o(0);return{subscribe:a,set:r,decrement:(e=1)=>n(t=>Math.max(0,t-e)),increment:(e=1)=>n(t=>t+e),reset:()=>r(0)}}const u=s();export{u};

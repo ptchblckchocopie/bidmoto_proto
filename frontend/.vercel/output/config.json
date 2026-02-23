@@ -1,0 +1,187 @@
+{
+	"version": 3,
+	"routes": [
+		{
+			"src": "/_app/immutable/.+",
+			"headers": {
+				"cache-control": "public, immutable, max-age=31536000"
+			}
+		},
+		{
+			"handle": "filesystem"
+		},
+		{
+			"src": "^/?(?:/__data.json)?$",
+			"dest": "/"
+		},
+		{
+			"src": "^/about-us/?(?:/__data.json)?$",
+			"dest": "/about-us"
+		},
+		{
+			"src": "^/api/bridge/bids/?(?:/__data.json)?$",
+			"dest": "/api/bridge/bids"
+		},
+		{
+			"src": "^/api/bridge/bid/accept/?(?:/__data.json)?$",
+			"dest": "/api/bridge/bid/accept"
+		},
+		{
+			"src": "^/api/bridge/bid/queue/?(?:/__data.json)?$",
+			"dest": "/api/bridge/bid/queue"
+		},
+		{
+			"src": "^/api/bridge/media/?(?:/__data.json)?$",
+			"dest": "/api/bridge/media"
+		},
+		{
+			"src": "^/api/bridge/media/([^/]+?)/?(?:/__data.json)?$",
+			"dest": "/api/bridge/media/[id]"
+		},
+		{
+			"src": "^/api/bridge/messages/?(?:/__data.json)?$",
+			"dest": "/api/bridge/messages"
+		},
+		{
+			"src": "^/api/bridge/messages/([^/]+?)/?(?:/__data.json)?$",
+			"dest": "/api/bridge/messages/[id]"
+		},
+		{
+			"src": "^/api/bridge/notifications/poll/?(?:/__data.json)?$",
+			"dest": "/api/bridge/notifications/poll"
+		},
+		{
+			"src": "^/api/bridge/products/?(?:/__data.json)?$",
+			"dest": "/api/bridge/products"
+		},
+		{
+			"src": "^/api/bridge/products/([^/]+?)/?(?:/__data.json)?$",
+			"dest": "/api/bridge/products/[id]"
+		},
+		{
+			"src": "^/api/bridge/products/([^/]+?)/status/?(?:/__data.json)?$",
+			"dest": "/api/bridge/products/[id]/status"
+		},
+		{
+			"src": "^/api/bridge/ratings/?(?:/__data.json)?$",
+			"dest": "/api/bridge/ratings"
+		},
+		{
+			"src": "^/api/bridge/ratings/([^/]+?)/?(?:/__data.json)?$",
+			"dest": "/api/bridge/ratings/[id]"
+		},
+		{
+			"src": "^/api/bridge/transactions/?(?:/__data.json)?$",
+			"dest": "/api/bridge/transactions"
+		},
+		{
+			"src": "^/api/bridge/transactions/([^/]+?)/?(?:/__data.json)?$",
+			"dest": "/api/bridge/transactions/[id]"
+		},
+		{
+			"src": "^/api/bridge/typing/?(?:/__data.json)?$",
+			"dest": "/api/bridge/typing"
+		},
+		{
+			"src": "^/api/bridge/typing/([^/]+?)/?(?:/__data.json)?$",
+			"dest": "/api/bridge/typing/[productId]"
+		},
+		{
+			"src": "^/api/bridge/users/limits/?(?:/__data.json)?$",
+			"dest": "/api/bridge/users/limits"
+		},
+		{
+			"src": "^/api/bridge/users/login/?(?:/__data.json)?$",
+			"dest": "/api/bridge/users/login"
+		},
+		{
+			"src": "^/api/bridge/users/logout/?(?:/__data.json)?$",
+			"dest": "/api/bridge/users/logout"
+		},
+		{
+			"src": "^/api/bridge/users/me/?(?:/__data.json)?$",
+			"dest": "/api/bridge/users/me"
+		},
+		{
+			"src": "^/api/bridge/users/register/?(?:/__data.json)?$",
+			"dest": "/api/bridge/users/register"
+		},
+		{
+			"src": "^/api/bridge/users/([^/]+?)/?(?:/__data.json)?$",
+			"dest": "/api/bridge/users/[id]"
+		},
+		{
+			"src": "^/api/bridge/users/([^/]+?)/products/?(?:/__data.json)?$",
+			"dest": "/api/bridge/users/[id]/products"
+		},
+		{
+			"src": "^/api/bridge/users/([^/]+?)/ratings/?(?:/__data.json)?$",
+			"dest": "/api/bridge/users/[id]/ratings"
+		},
+		{
+			"src": "^/api/bridge/void-request/create/?(?:/__data.json)?$",
+			"dest": "/api/bridge/void-request/create"
+		},
+		{
+			"src": "^/api/bridge/void-request/respond/?(?:/__data.json)?$",
+			"dest": "/api/bridge/void-request/respond"
+		},
+		{
+			"src": "^/api/bridge/void-request/second-bidder-response/?(?:/__data.json)?$",
+			"dest": "/api/bridge/void-request/second-bidder-response"
+		},
+		{
+			"src": "^/api/bridge/void-request/seller-choice/?(?:/__data.json)?$",
+			"dest": "/api/bridge/void-request/seller-choice"
+		},
+		{
+			"src": "^/api/bridge/void-request/([^/]+?)/?(?:/__data.json)?$",
+			"dest": "/api/bridge/void-request/[transactionId]"
+		},
+		{
+			"src": "^/dashboard/?(?:/__data.json)?$",
+			"dest": "/dashboard"
+		},
+		{
+			"src": "^/inbox/?(?:/__data.json)?$",
+			"dest": "/inbox"
+		},
+		{
+			"src": "^/login/?(?:/__data.json)?$",
+			"dest": "/login"
+		},
+		{
+			"src": "^/products/?(?:/__data.json)?$",
+			"dest": "/products"
+		},
+		{
+			"src": "^/products/([^/]+?)/?(?:/__data.json)?$",
+			"dest": "/products/[id]"
+		},
+		{
+			"src": "^/profile/?(?:/__data.json)?$",
+			"dest": "/profile"
+		},
+		{
+			"src": "^/purchases/?(?:/__data.json)?$",
+			"dest": "/purchases"
+		},
+		{
+			"src": "^/register/?(?:/__data.json)?$",
+			"dest": "/register"
+		},
+		{
+			"src": "^/sell/?(?:/__data.json)?$",
+			"dest": "/sell"
+		},
+		{
+			"src": "^/users/([^/]+?)/?(?:/__data.json)?$",
+			"dest": "/users/[id]"
+		},
+		{
+			"src": "/.*",
+			"dest": "/![-]/catchall"
+		}
+	],
+	"overrides": {}
+}
